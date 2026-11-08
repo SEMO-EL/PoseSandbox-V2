@@ -4,4 +4,4 @@ User-agent: *
 Allow: /
 
 # Sitemap location (GitHub Pages)
-Sitemap: https://semo-el.github.io/sandbox-test/sitemap.xml
+Sitemap: https://semo-el.github.io/PoseSandbox/sitemap.xml

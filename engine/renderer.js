@@ -1,62 +1,28 @@
 // engine/renderer.js
-// Creates and manages THREE.WebGLRenderer exactly like your current app.js,
-// but packaged as a module.
+// WebGL renderer sized to its canvas. alpha:true so PNG export can be transparent.
+// No preserveDrawingBuffer: exports read the canvas in the same task as the render, which is enough.
 
 import * as THREE from "three";
 
-export function createRenderer(canvas, {
-  powerPreference = "high-performance",
-  antialias = true,
-  alpha = false,
-  preserveDrawingBuffer = true,
-  maxPixelRatio = 2,
-  toneMappingExposure = 1.05
-} = {}) {
-  if (!canvas) throw new Error("createRenderer: canvas is required");
-
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias,
-    alpha,
-    powerPreference,
-    preserveDrawingBuffer
-  });
-
-  // Same settings as your app.js
+export function createRenderer(canvas, { maxPixelRatio = 2 } = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = toneMappingExposure;
-
-  // Shadows (quality upgrade you already had)
+  renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap; // r18x removed PCFSoftShadowMap; shadow.radius softens instead
 
-  // Initial sizing (safe if canvas has no layout yet)
-  const w = canvas.clientWidth || canvas.width || 1;
-  const h = canvas.clientHeight || canvas.height || 1;
+  const pixelRatio = () => Math.min(window.devicePixelRatio || 1, maxPixelRatio);
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
-  renderer.setSize(w, h, false);
-
-  function resizeToCanvas({
-    camera = null,
-    onAfterResize = null
-  } = {}) {
-    const cw = canvas.clientWidth;
-    const ch = canvas.clientHeight;
-    if (!cw || !ch) return false;
-
-    if (camera && "aspect" in camera) {
-      camera.aspect = cw / ch;
-      camera.updateProjectionMatrix?.();
-    }
-
-    renderer.setSize(cw, ch, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
-
-    try { onAfterResize?.(); } catch {}
+  function resize(camera) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return false;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setPixelRatio(pixelRatio());
+    renderer.setSize(w, h, false);
     return true;
   }
 
-  return { renderer, resizeToCanvas };
+  return { renderer, resize, pixelRatio };
 }

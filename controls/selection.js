@@ -1,249 +1,121 @@
-// controls/Selection.js
-// Owns: picking + selection state, outline, focus camera, selection name UI, clear.
-// Fix: imported models remain selectable after Esc (scene-wide pickables + importRoot promotion).
+// controls/selection.js
+// Picking, hover and selection highlight. A click (press + release without dragging) selects; a drag orbits.
+// The selected part glows in the accent colour (emissive) instead of the old axis-aligned box.
 
 import * as THREE from "three";
 
-export class SelectionController {
-  /**
-   * @param {{
-   *  canvas: HTMLCanvasElement,
-   *  camera: THREE.Camera,
-   *  scene: THREE.Scene,
-   *  orbit: any, // OrbitControls
-   *  gizmo: any, // TransformControls
-   *  world: { root: THREE.Object3D, joints: THREE.Object3D[], props: THREE.Object3D[] },
-   *  selectionNameInput?: HTMLInputElement,
-   *  btnFocus?: HTMLElement,
-   *  btnClear?: HTMLElement,
-   *  helpModal?: HTMLElement,
-   *  // state read
-   *  getMode?: ()=>string, // returns "rotate"|"move"|"orbit"|"scale"
-   *  getShowOutline?: ()=>boolean,
-   *  // hooks
-   *  toast?: (msg:string, ms?:number)=>void,
-   * }} opts
-   */
-  constructor(opts) {
-    this.canvas = opts.canvas;
-    this.camera = opts.camera;
-    this.scene = opts.scene;
-    this.orbit = opts.orbit;
-    this.gizmo = opts.gizmo;
-    this.world = opts.world;
+const ACCENT = new THREE.Color(0x7c5cff);
+const LEVEL = { hover: 0.16, selected: 0.42 };
 
-    this.ui = {
-      selectionName: opts.selectionNameInput || null,
-      btnFocus: opts.btnFocus || null,
-      btnClear: opts.btnClear || null,
-      helpModal: opts.helpModal || null
-    };
-
-    this.getMode = typeof opts.getMode === "function" ? opts.getMode : () => "rotate";
-    this.getShowOutline = typeof opts.getShowOutline === "function" ? opts.getShowOutline : () => true;
-
-    this.toast = typeof opts.toast === "function" ? opts.toast : null;
-
+export class Selection {
+  constructor({ camera, canvas, gizmo, getRoots, onChange, onHoverChange }) {
+    this.camera = camera;
+    this.canvas = canvas;
+    this.gizmo = gizmo;
+    this.getRoots = getRoots;
+    this.onChange = onChange;
+    this.onHoverChange = onHoverChange;
     this.selected = null;
+    this.hovered = null;
+    this.enabled = true;     // highlight on/off (user setting)
+    this.ray = new THREE.Raycaster();
+    this.ndc = new THREE.Vector2();
+    this._painted = new Map(); // mesh -> level currently applied
 
-    this.raycaster = new THREE.Raycaster();
-    this.pointer = new THREE.Vector2();
-
-    // outline helper (same look as your current app.js)
-    this.outline = new THREE.BoxHelper(new THREE.Object3D(), 0x24d2ff);
-    this.outline.visible = false;
-    this.scene.add(this.outline);
-
-    this._onPointerDown = (e) => this.onPointerDown(e);
-    this._onKeyDown = (e) => this.onKeyDown(e);
-
-    window.addEventListener("pointerdown", this._onPointerDown);
-    window.addEventListener("keydown", this._onKeyDown);
-
-    this.ui.btnFocus?.addEventListener("click", () => this.focusSelection());
-    this.ui.btnClear?.addEventListener("click", () => this.clearSelection());
-
-    this._syncUI();
+    let down = null;
+    canvas.addEventListener("pointerdown", (e) => {
+      // a press on the gizmo belongs to the gizmo
+      down = e.isPrimary && e.button === 0 && this.gizmo.axis === null ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const quick = performance.now() - down.t < 600;
+      down = null;
+      if (moved < 6 && quick && !this.gizmo.dragging) this.set(this.pick(e.clientX, e.clientY));
+    });
+    let raf = 0, last = null;
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse" || e.buttons) return;
+      last = e;
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; this.setHover(this.gizmo.axis ? null : this.pick(last.clientX, last.clientY)); });
+    });
+    canvas.addEventListener("pointerleave", () => this.setHover(null));
   }
 
-  destroy() {
-    window.removeEventListener("pointerdown", this._onPointerDown);
-    window.removeEventListener("keydown", this._onKeyDown);
-    // outline stays in scene unless you want to remove it
-  }
-
-  getSelected() {
+  get() {
     return this.selected;
   }
 
-  setSelection(obj) {
-    this.selected = obj || null;
+  /** The thing a click selects: a joint for body meshes, the item root for props, lights and imports. */
+  resolve(mesh) {
+    return mesh.userData.joint || mesh.userData.selectRoot || null;
+  }
 
-    if (!this.selected) {
-      this._syncUI();
-      this.gizmo?.detach?.();
-      this.outline.visible = false;
-      return;
+  pick(clientX, clientY) {
+    const r = this.canvas.getBoundingClientRect();
+    this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.ray.setFromCamera(this.ndc, this.camera);
+    const meshes = [];
+    for (const root of this.getRoots()) {
+      root.traverseVisible((o) => { if (o.isMesh && o.userData.pickable) meshes.push(o); });
     }
-
-    this._syncUI();
-    this.gizmo?.attach?.(this.selected);
-    this.updateOutline();
+    const hit = this.ray.intersectObjects(meshes, false)[0];
+    return hit ? this.resolve(hit.object) : null;
   }
 
-  clearSelection() {
-    this.selected = null;
-    this._syncUI();
-    this.gizmo?.detach?.();
-    this.outline.visible = false;
-    this._toast("Selection cleared");
+  set(target) {
+    if (target === this.selected) return;
+    this.selected = target || null;
+    this.repaint();
+    this.onChange?.(this.selected);
   }
 
-  updateOutline() {
-    if (!this.getShowOutline() || !this.selected) {
-      this.outline.visible = false;
-      return;
+  setHover(target) {
+    if (target === this.hovered) return;
+    this.hovered = target || null;
+    this.repaint();
+    this.onHoverChange?.(this.hovered);
+  }
+
+  meshesOf(target) {
+    const out = [];
+    if (!target) return out;
+    const root = target.userData.isJoint ? target.userData.segment : target;
+    root.traverse((o) => { if (o.isMesh) out.push(o); });
+    return out;
+  }
+
+  /** Re-apply highlights (after a rebuild, an undo, or the setting changed). */
+  repaint() {
+    const want = new Map();
+    if (this.enabled) {
+      for (const m of this.meshesOf(this.hovered)) want.set(m, LEVEL.hover);
+      for (const m of this.meshesOf(this.selected)) want.set(m, LEVEL.selected);
     }
-    this.outline.setFromObject(this.selected);
-    this.outline.visible = true;
+    for (const [m] of this._painted) if (!want.has(m)) paint(m, 0);
+    for (const [m, lvl] of want) paint(m, lvl);
+    this._painted = want;
   }
 
-  tick() {
-    if (this.selected && this.getShowOutline()) {
-      this.outline.setFromObject(this.selected);
-      this.outline.visible = true;
-    } else {
-      this.outline.visible = false;
+  /** Run fn with every highlight removed (exports, thumbnails). */
+  withoutHighlights(fn) {
+    for (const [m] of this._painted) paint(m, 0);
+    try { return fn(); } finally { for (const [m, lvl] of this._painted) paint(m, lvl); }
+  }
+}
+
+function paint(mesh, level) {
+  for (const mat of [].concat(mesh.material)) {
+    if (!mat) continue;
+    const ud = mat.userData;
+    if (mat.emissive) {
+      if (ud.emissive === undefined) { ud.emissive = mat.emissive.getHex(); ud.emissiveIntensity = mat.emissiveIntensity; }
+      if (level) { mat.emissive.copy(ACCENT).multiplyScalar(level); mat.emissiveIntensity = 1; }
+      else { mat.emissive.setHex(ud.emissive); mat.emissiveIntensity = ud.emissiveIntensity; }
+    } else if (mat.transparent) { // helpers: the floor ring, a light's halo
+      if (ud.opacity === undefined) ud.opacity = mat.opacity;
+      mat.opacity = level ? Math.min(1, ud.opacity + level * 1.6) : ud.opacity;
     }
-  }
-
-  focusSelection() {
-    if (!this.selected) return;
-
-    const box = new THREE.Box3().setFromObject(this.selected);
-    const size = box.getSize(new THREE.Vector3()).length();
-    const center = box.getCenter(new THREE.Vector3());
-
-    const dist = this._clamp(size * 1.6, 1.8, 12);
-    const dir = new THREE.Vector3(1, 0.7, 1).normalize();
-
-    this.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
-    this.orbit?.target?.copy?.(center);
-    this.orbit?.update?.();
-
-    this._toast("Focused");
-  }
-
-  onPointerDown(ev) {
-    // block selection when orbit mode is active
-    if (this.getMode() === "orbit") return;
-    // block selection if help modal is open
-    if (this.ui.helpModal && !this.ui.helpModal.classList.contains("hidden")) return;
-
-    const obj = this.pickFromPointer(ev);
-    if (obj) {
-      this.setSelection(obj);
-      this._toast(`Selected: ${obj.name || "object"}`);
-    }
-  }
-
-  onKeyDown(ev) {
-    if (ev.key === "Escape") {
-      if (this.ui.helpModal && !this.ui.helpModal.classList.contains("hidden")) return;
-      this.clearSelection();
-      return;
-    }
-
-    if (ev.key.toLowerCase() === "f") {
-      this.focusSelection();
-    }
-  }
-
-  /* ---------------- picking ---------------- */
-
-  _isPickable(obj) {
-    if (!obj) return false;
-    if (!obj.userData || !obj.userData.pickable) return false;
-
-    // avoid accidentally selecting helpers/gizmo internals if they ever get marked
-    if (obj.userData.nonPickable) return false;
-    if (obj.userData.isGizmo) return false;
-    if (obj.type === "TransformControlsPlane" || obj.type === "TransformControlsGizmo") return false;
-
-    return true;
-  }
-
-  _collectPickablesInto(arr, root) {
-    if (!root || !root.traverse) return;
-    root.traverse((obj) => {
-      if (this._isPickable(obj)) arr.push(obj);
-    });
-  }
-
-  _resolveSelectionFromHit(hitObj) {
-    if (!hitObj) return null;
-
-    // If a mesh belongs to an imported root, always promote to that root
-    if (hitObj.userData?.importRoot) return hitObj.userData.importRoot;
-
-    // climb to joint group or prop root
-    let o = hitObj;
-    while (o) {
-      // imported model mesh can store importRoot on itself (common)
-      if (o.userData?.importRoot) return o.userData.importRoot;
-
-      // joints: return joint group (parent marked isJoint)
-      if (o.parent?.userData?.isJoint) return o.parent;
-
-      // props: if this object itself is the prop root
-      if (o.userData?.isImportedRoot) return o;
-      if (o.userData?.isProp && o.userData?.isImportedModel && o.userData?.importRoot) return o.userData.importRoot;
-      if (o.userData?.isProp) return o;
-
-      o = o.parent || null;
-    }
-
-    return hitObj;
-  }
-
-  pickFromPointer(ev) {
-    const rect = this.canvas.getBoundingClientRect();
-    this.pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
-
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-
-    const pickables = [];
-
-    // 1) character pickables
-    this._collectPickablesInto(pickables, this.world.root);
-
-    // 2) registered props pickables
-    (this.world.props || []).forEach((p) => this._collectPickablesInto(pickables, p));
-
-    // 3) IMPORTANT: scene-wide pickables (covers imported models not registered in world.props)
-    this._collectPickablesInto(pickables, this.scene);
-
-    if (!pickables.length) return null;
-
-    const hits = this.raycaster.intersectObjects(pickables, true);
-    if (!hits.length) return null;
-
-    return this._resolveSelectionFromHit(hits[0].object);
-  }
-
-  /* ---------------- ui/helpers ---------------- */
-
-  _syncUI() {
-    if (!this.ui.selectionName) return;
-    this.ui.selectionName.value = this.selected ? (this.selected.name || "(unnamed)") : "None";
-  }
-
-  _toast(msg, ms = 1200) {
-    if (this.toast) this.toast(msg, ms);
-  }
-
-  _clamp(v, a, b) {
-    return Math.max(a, Math.min(b, v));
   }
 }

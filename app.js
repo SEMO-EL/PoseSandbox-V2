@@ -1,1251 +1,957 @@
-// app.js
-// PoseSandbox modular entrypoint — uses EVERY module in your tree.
-// ✅ Scale mode (props scale normally; body joints scale only their visible mesh).
-// ✅ Symmetry toggle for BODY (mirrors L ↔ R on rotate + scale).
-// ✅ True reset (move + rotate + scale) using rest snapshot.
-// ✅ Import 3D (.glb/.gltf) + selectable like a prop.
-// ✅ Lighting controls (intensity/color/direction + presets).
-// ✅ Reference Image overlay pinned to camera (load/clear/show/opacity/size/offset/flip + fit buttons).
+// app.js — the PoseSandbox editor: wires the figure, scene, tools and panels together.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-
-import { Character } from "./character/character.js";
-
-import { InputManager, bindPropButtons } from "./controls/inputs.js";
-import { ModesController } from "./controls/modes.js";
-import { SelectionController } from "./controls/selection.js";
-
-import { clamp, makeToast, niceTime } from "./core/helpers.js";
-import { createState, setShowAxes, setShowGrid, setShowOutline, setPerfEnabled } from "./core/state.js";
-import {
-  createWorld,
-  addProp as addPropWorld,
-  removeProp as removePropWorld,
-  PROP_TYPES
-} from "./core/world.js";
-
+import { Mannequin, BUILDS, SKINS, CHAINS, chainOf, jointLabel, counterpartName } from "./character/character.js";
 import { createRenderer } from "./engine/renderer.js";
-import { createScene, setBackgroundTone, applyLightingPreset, setKeyDirectionByName } from "./engine/scene.js";
+import { createScene, BACKGROUNDS, fovFromLens } from "./engine/scene.js";
 import { createLoop } from "./engine/loop.js";
-
+import { createReference } from "./engine/reference.js";
+import { createWorld, createProp, propColor, markImport, PROP_TYPES } from "./core/world.js";
+import { createHistory } from "./core/history.js";
+import { isTypingTarget, stamp, downloadBlob, makeToast } from "./core/helpers.js";
+import { createCustomLight, applyLightParams, lightParams, MAX_LIGHTS } from "./lights/custom-lights.js";
+import { solveTwoBone, holdWorldRotation } from "./controls/ik.js";
+import { Selection } from "./controls/selection.js";
+import { serializeScene, applyScene, mirrorPose, mirrorQuaternion } from "./poses/pose-io.js";
+import { PRESETS, applyPreset } from "./poses/presets.js";
+import { HAND_POSES, applyHandPose } from "./poses/hands.js";
 import { Gallery } from "./gallery/gallery.js";
 
-import { serializePose, applyPose, applyPoseJointsOnly } from "./poses/pose-io.js";
-import { createPresets, PresetsUI } from "./poses/presets.js";
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const toast = makeToast($("toast"));
+const SESSION_KEY = "posesandbox_session_v2";
+const PROP_BUTTONS = ["cube", "sphere", "cylinder", "cone", "pyramid", "torus", "block", "step", "pole", "wall", "icosa", "plane"];
 
-/* ---------------------------- DOM refs ---------------------------- */
-const canvas = document.getElementById("c");
-const errorOverlay = document.getElementById("errorOverlay");
-const errorText = document.getElementById("errorText");
-const toastEl = document.getElementById("toast");
-
-const selectionName = document.getElementById("selectionName");
-const btnFocus = document.getElementById("btnFocus");
-const btnClear = document.getElementById("btnClear");
-const btnSymmetry = document.getElementById("btnSymmetry");
-
-const modeRotate = document.getElementById("modeRotate");
-const modeMove = document.getElementById("modeMove");
-const modeOrbit = document.getElementById("modeOrbit");
-const modeScale = document.getElementById("modeScale");
-
-const axisX = document.getElementById("axisX");
-const axisY = document.getElementById("axisY");
-const axisZ = document.getElementById("axisZ");
-const rotateSnap = document.getElementById("rotateSnap");
-
-const togGrid = document.getElementById("togGrid");
-const togAxes = document.getElementById("togAxes");
-const togOutline = document.getElementById("togOutline");
-
-const btnResetPose = document.getElementById("btnResetPose");
-const btnRandomPose = document.getElementById("btnRandomPose");
-const btnSavePose = document.getElementById("btnSavePose");
-const btnLoadPose = document.getElementById("btnLoadPose");
-const filePose = document.getElementById("filePose");
-const poseNotes = document.getElementById("poseNotes");
-
-const btnDelProp = document.getElementById("btnDelProp");
-const btnScatter = document.getElementById("btnScatter");
-const bgTone = document.getElementById("bgTone");
-
-const btnExport = document.getElementById("btnExport");
-const btnHelp = document.getElementById("btnHelp");
-const helpModal = document.getElementById("helpModal");
-const btnCloseHelp = document.getElementById("btnCloseHelp");
-const btnHelpOk = document.getElementById("btnHelpOk");
-const btnPerf = document.getElementById("btnPerf");
-
-/* Import 3D */
-const btnImport3D = document.getElementById("btnImport3D");
-const fileModel = document.getElementById("fileModel");
-
-/* Lighting UI */
-const lightPreset = document.getElementById("lightPreset");
-const keyDir = document.getElementById("keyDir");
-const keyIntensity = document.getElementById("keyIntensity");
-const keyColor = document.getElementById("keyColor");
-const fillIntensity = document.getElementById("fillIntensity");
-const fillColor = document.getElementById("fillColor");
-const rimIntensity = document.getElementById("rimIntensity");
-const rimColor = document.getElementById("rimColor");
-const ambIntensity = document.getElementById("ambIntensity");
-const ambColor = document.getElementById("ambColor");
-const hemiIntensity = document.getElementById("hemiIntensity");
-const hemiSky = document.getElementById("hemiSky");
-const hemiGround = document.getElementById("hemiGround");
-const btnResetLights = document.getElementById("btnResetLights");
-
-/* Gallery DOM */
-const btnSaveGallery = document.getElementById("btnSaveGallery");
-const poseGallery = document.getElementById("poseGallery");
-const btnRenamePose = document.getElementById("btnRenamePose");
-const btnDeletePose = document.getElementById("btnDeletePose");
-const btnClearGallery = document.getElementById("btnClearGallery");
-
-/* Presets DOM */
-const presetGallery = document.getElementById("presetGallery");
-const btnPresetApply = document.getElementById("btnPresetApply");
-const btnPresetSave = document.getElementById("btnPresetSave");
-
-/* Reference Image DOM (NEW) */
-const btnRefLoad = document.getElementById("btnRefLoad");
-const btnRefClear = document.getElementById("btnRefClear");
-const fileRef = document.getElementById("fileRef");
-const refShow = document.getElementById("refShow");
-const refOpacity = document.getElementById("refOpacity");
-const refSize = document.getElementById("refSize");
-const refOffsetX = document.getElementById("refOffsetX");
-const refOffsetY = document.getElementById("refOffsetY");
-const refFlipX = document.getElementById("refFlipX");
-
-const btnRefFitCenter = document.getElementById("btnRefFitCenter");
-const btnRefFitLeft = document.getElementById("btnRefFitLeft");
-const btnRefFitRight = document.getElementById("btnRefFitRight");
-const btnRefHalf = document.getElementById("btnRefHalf");
-const btnRefFull = document.getElementById("btnRefFull");
-
-/* ---------------------------- Helpers ---------------------------- */
-const showToast = makeToast(toastEl);
-
-function fatal(err) {
-  if (errorText) errorText.textContent = String(err?.stack || err);
-  if (errorOverlay) errorOverlay.classList.remove("hidden");
+try {
+  boot();
+} catch (err) {
+  $("fatalText").textContent = String(err?.stack || err);
+  $("fatal").hidden = false;
   console.error(err);
 }
 
-function downloadJson(filename, dataObj) {
-  const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+function boot() {
+  const canvas = $("c");
+  const { renderer, resize } = createRenderer(canvas);
+  const S = createScene({ renderer, canvas });
+  const { scene, camera, orbit, gizmo, floor } = S;
+  const loop = createLoop({ renderer, scene, camera, orbit });
+  const invalidate = loop.invalidate;
+  const figure = new Mannequin(scene).create("neutral");
+  const world = createWorld(scene);
+  const reference = createReference(camera);
+  const ikHandle = new THREE.Object3D();
+  ikHandle.userData.helper = true;
+  scene.add(ikHandle);
+  const shadowCatcher = new THREE.ShadowMaterial({ opacity: 0.35 });
 
-function exportPNG(renderer, scene, camera) {
-  renderer.render(scene, camera);
-  const url = renderer.domElement.toDataURL("image/png");
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "pose.png";
-  a.click();
-  showToast("Exported PNG");
-}
+  const opts = { mode: "rotate", symmetry: false, pinFeet: true, space: "local", snap: 15, axes: { x: true, y: true, z: true }, grid: true, floor: true };
+  const env = { background: "midnight", preset: "studio", keyDir: "front_right" };
+  const drag = { kind: null };
+  let history = null;
+  let modeHint = "";
 
-function hexToColorInput(c) {
-  const col = new THREE.Color(c);
-  return `#${col.getHexString()}`;
-}
+  /* ------------------------------------------------------------ environment (studio lights + background) */
 
-function colorInputToHex(v) {
-  try {
-    const col = new THREE.Color(v);
-    return col.getHex();
-  } catch {
-    return 0xffffff;
-  }
-}
+  const STUDIO = [
+    ["key", "Key", 6], ["fill", "Fill", 3], ["rim", "Rim", 5], ["ambient", "Ambient", 3], ["hemi", "Sky", 3]
+  ];
 
-/* ---------------------------- Boot ---------------------------- */
-try {
-  /* Core state + world */
-  const STATE = createState();
-  const world = createWorld();
-
-  // Symmetry state (kept here to avoid touching other modules)
-  const SYM = { enabled: false };
-
-  /* Input */
-  const input = new InputManager({ canvas, helpModal });
-
-  /* Renderer */
-  const { renderer, resizeToCanvas } = createRenderer(canvas, {
-    powerPreference: "high-performance",
-    antialias: true,
-    alpha: false,
-    preserveDrawingBuffer: true,
-    maxPixelRatio: 2,
-    toneMappingExposure: 1.05
-  });
-
-  /* Scene */
-  const sceneBundle = createScene({
-    canvas,
-    renderer,
-    STATE,
-    showToast,
-    onPointerDown: null,
-    onKeyDown: null
-  });
-
-  const {
-    scene,
-    camera,
-    orbit,
-    gizmo,
-    axesHelper,
-    gridHelper,
-    outline: engineOutline,
-    lights
-  } = sceneBundle;
-
-  // Background selector initial
-  setBackgroundTone(scene, bgTone?.value || "midnight");
-
-  /* Character */
-  function makeMaterial(colorHex) {
-    return new THREE.MeshStandardMaterial({
-      color: colorHex,
-      metalness: 0.08,
-      roughness: 0.75
-    });
-  }
-
-  const character = new Character(THREE, scene, makeMaterial);
-  const built = character.build();
-
-  // Connect world to character
-  world.root = built.root;
-  world.joints = built.joints;
-
-  /* ---------------------------- Scale targeting ---------------------------- */
-
-  function findFirstPickableMesh(obj) {
-    if (!obj) return null;
-    let found = null;
-    obj.traverse?.((o) => {
-      if (found) return;
-      if (o && o.isMesh && o.userData && o.userData.pickable) found = o;
-    });
-    return found;
-  }
-
-  // ---------------- REST POSE SNAPSHOT (for true reset) ----------------
-  const REST = new Map(); // key: joint.name => { pos, quat, scale, meshScale? }
-
-  function snapshotRestPose() {
-    REST.clear();
-    (world.joints || []).forEach((j) => {
-      const mesh = findFirstPickableMesh(j);
-      REST.set(j.name, {
-        pos: j.position.clone(),
-        quat: j.quaternion.clone(),
-        scale: j.scale.clone(),
-        meshScale: mesh ? mesh.scale.clone() : null
-      });
-    });
-  }
-  snapshotRestPose();
-
-  /* Selection controller (we route events via InputManager) */
-  const selection = new SelectionController({
-    canvas,
-    camera,
-    scene,
-    orbit,
-    gizmo,
-    world,
-    selectionNameInput: selectionName,
-    btnFocus,
-    btnClear,
-    helpModal,
-    getMode: () => STATE.mode,
-    getShowOutline: () => STATE.showOutline,
-    toast: showToast
-  });
-
-  // SelectionController adds its own outline; remove engine outline to avoid duplicates.
-  try { if (engineOutline) scene.remove(engineOutline); } catch {}
-
-  // We do NOT want SelectionController to bind window events (InputManager does), so kill its listeners.
-  selection.destroy();
-
-  /* Modes controller */
-  const modes = new ModesController({
-    modeRotateBtn: modeRotate,
-    modeMoveBtn: modeMove,
-    modeOrbitBtn: modeOrbit,
-    modeScaleBtn: modeScale,
-    axisXBtn: axisX,
-    axisYBtn: axisY,
-    axisZBtn: axisZ,
-    rotateSnapSelect: rotateSnap,
-    orbit,
-    gizmo,
-    toast: showToast
-  });
-
-  // Sync ModesController -> STATE
-  const _setMode = modes.setMode.bind(modes);
-  modes.setMode = (m) => {
-    _setMode(m);
-    STATE.mode = modes.state.mode;
-    attachGizmoForCurrentMode();
-    return STATE.mode;
-  };
-
-  const _toggleAxis = modes.toggleAxis.bind(modes);
-  modes.toggleAxis = (k) => {
-    const v = _toggleAxis(k);
-    STATE.axis = { ...modes.state.axis };
-    return v;
-  };
-
-  const _setSnapDeg = modes.setSnapDeg.bind(modes);
-  modes.setSnapDeg = (deg) => {
-    const v = _setSnapDeg(deg);
-    STATE.snapDeg = modes.state.snapDeg;
-    return v;
-  };
-
-  STATE.mode = modes.state.mode;
-  STATE.axis = { ...modes.state.axis };
-  STATE.snapDeg = modes.state.snapDeg;
-
-  function getGizmoTargetForSelection(sel) {
-    if (!sel) return null;
-    if (STATE.mode === "orbit") return null;
-
-    // ✅ imported mesh clicked? scale/rotate/move the import root
-    if (sel.userData?.importRoot && sel.userData.importRoot.userData?.isImportedRoot) {
-      return sel.userData.importRoot;
+  function envState() {
+    const studio = {};
+    for (const [k] of STUDIO) {
+      const l = S.lights[k];
+      studio[k] = { color: "#" + l.color.getHexString(), intensity: Math.round(l.intensity * 1000) / 1000 };
+      if (l.groundColor) studio[k].ground = "#" + l.groundColor.getHexString();
     }
-
-    if (STATE.mode === "scale") {
-      if (sel.userData?.isProp) return sel;
-      if (sel.userData?.isJoint) {
-        const mesh = findFirstPickableMesh(sel);
-        return mesh || sel;
-      }
-    }
-
-    return sel;
+    return { background: env.background, preset: env.preset, keyDir: env.keyDir, studio };
   }
 
-  function attachGizmoForCurrentMode() {
-    const sel = selection.getSelected();
-    const target = getGizmoTargetForSelection(sel);
-
-    if (!target) {
-      gizmo.detach();
-      selection.updateOutline();
-      return;
+  function setEnvState(e) {
+    if (e.background) setBackground(e.background);
+    if (e.preset) env.preset = e.preset;
+    if (e.keyDir) { env.keyDir = e.keyDir; S.setKeyDirection(e.keyDir); }
+    for (const [k, v] of Object.entries(e.studio || {})) {
+      const l = S.lights[k];
+      if (!l) continue;
+      l.color.set(v.color);
+      l.intensity = v.intensity;
+      if (v.ground && l.groundColor) l.groundColor.set(v.ground);
     }
-
-    gizmo.attach(target);
-    selection.updateOutline();
+    syncStudioUI();
   }
 
-  // Wrap selection.setSelection so gizmo follows our targeting rules
-  const _selSet = selection.setSelection.bind(selection);
-  selection.setSelection = (obj) => {
-    _selSet(obj);
-    attachGizmoForCurrentMode();
-  };
+  function setBackground(name) {
+    env.background = BACKGROUNDS[name] ? name : "midnight";
+    S.setBackground(env.background);
+    $("bgTone").value = env.background;
+    applyFloorVisibility();
+  }
 
-  const _selClear = selection.clearSelection.bind(selection);
-  selection.clearSelection = () => {
-    _selClear();
+  function applyFloorVisibility() {
+    const backdrop = reference.state.behind && reference.mesh.visible; // a backdrop image replaces the floor
+    floor.visible = opts.floor && !backdrop;
+    S.grid().visible = opts.grid && !backdrop;
+    invalidate();
+  }
+
+  /* ------------------------------------------------------------ documents, history, session */
+
+  const ctx = { figure, world, cameraState: S.cameraState, setCameraState: S.setCameraState, envState, setEnvState };
+  const notes = () => $("poseNotes").value;
+  const snapshot = () => JSON.stringify(serializeScene(ctx, { camera: false }));
+
+  function loadDoc(doc, { camera = true } = {}) {
+    const sel = selection.get();
+    const selName = sel?.userData.isJoint ? sel.name : null;
+    const selUid = sel?.userData.uid;
+    const res = applyScene(doc, ctx, { camera });
+    let next = selName ? figure.joint(selName) : selUid ? world.items.get(selUid) : null;
+    if (next && !next.userData.isJoint && next.parent !== scene) next = null;
+    selection.selected = null; // joints may be new objects after a rebuild
+    selection.set(next);
+    selection.repaint();
+    syncFigureUI();
+    syncLensUI();
+    renderLightList();
+    attachGizmo();
+    return res;
+  }
+
+  function commit() {
+    if (history?.commit()) saveSessionSoon();
+  }
+
+  function undo() { if (history.undo()) toast("Undo", 700); }
+  function redo() { if (history.redo()) toast("Redo", 700); }
+
+  let saveTimer = 0;
+  function saveSessionSoon() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSession, 400);
+  }
+  function saveSession() {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(serializeScene(ctx, { notes: notes() }))); } catch { /* storage full or blocked: not fatal */ }
+  }
+
+  /* ------------------------------------------------------------ selection + gizmo */
+
+  const selection = new Selection({
+    camera, canvas, gizmo,
+    getRoots: () => [figure.root, ...world.live()],
+    onChange: () => { updateInspector(); renderLightList(); attachGizmo(); },
+    onHoverChange: (t) => { $("vhint").textContent = t ? labelOf(t) : modeHint; invalidate(); }
+  });
+
+  const labelOf = (o) => (o.userData.isJoint ? jointLabel(o.name) : o.name);
+
+  function setHint(text) {
+    modeHint = text;
+    $("vhint").textContent = text;
+  }
+
+  function attachGizmo() {
     gizmo.detach();
-  };
+    drag.kind = null;
+    const sel = selection.get();
+    const m = opts.mode;
+    gizmo.setMode(m === "move" ? "translate" : m === "scale" ? "scale" : "rotate");
+    gizmo.setSpace(m === "move" ? "world" : opts.space);
+    gizmo.showX = opts.axes.x; gizmo.showY = opts.axes.y; gizmo.showZ = opts.axes.z;
+    gizmo.setRotationSnap(m === "rotate" && opts.snap ? THREE.MathUtils.degToRad(opts.snap) : null);
 
-  /* ---------------------------- BODY SYMMETRY ---------------------------- */
-
-  function counterpartName(name) {
-    const n = String(name || "");
-    if (n.startsWith("l_")) return "r_" + n.slice(2);
-    if (n.startsWith("r_")) return "l_" + n.slice(2);
-    return null;
+    let target = null;
+    let hint = "Drag empty space to orbit · right-drag to pan · scroll to zoom";
+    if (sel && m === "view") hint = "View mode: the gizmo is hidden — press 1, 2 or 4 to edit";
+    else if (sel?.userData.isJoint) {
+      const name = sel.name;
+      const label = jointLabel(name);
+      if (m === "rotate") { target = sel; hint = `Rotate the ${label.toLowerCase()} — drag a ring`; }
+      else if (m === "scale") {
+        if (name === "char_root") hint = "Pick a body part, prop or model to scale";
+        else { target = sel.userData.segment; hint = `Scale the ${label.toLowerCase()}`; }
+      } else if (name === "char_root") { target = figure.root; drag.kind = "root"; hint = "Move the whole figure"; }
+      else if (chainOf(name)) {
+        drag.kind = "ik";
+        drag.chain = chainOf(name);
+        figure.joint(CHAINS[drag.chain][2]).getWorldPosition(ikHandle.position);
+        ikHandle.updateMatrixWorld();
+        target = ikHandle;
+        hint = drag.chain.endsWith("arm") ? "Drag the hand — the arm follows" : "Drag the foot — the leg follows";
+      } else {
+        drag.kind = "hips";
+        target = figure.joint("hips");
+        hint = opts.pinFeet ? "Move the body — the feet stay planted" : "Move the hips";
+      }
+    } else if (sel) {
+      if (m === "scale" && sel.userData.kind === "light") hint = "Lights don't scale — use Brightness and Range in Lighting";
+      else { target = sel; hint = m === "move" ? `Move the ${sel.name.toLowerCase()}` : m === "rotate" ? (sel.userData.lightType === "spot" ? "Rotate to aim the spot" : `Rotate the ${sel.name.toLowerCase()}`) : `Scale the ${sel.name.toLowerCase()}`; }
+    }
+    if (target) gizmo.attach(target);
+    setHint(hint);
+    invalidate();
   }
 
-  function getJointByName(name) {
-    if (!name) return null;
-    return (world.joints || []).find((j) => j && j.name === name) || null;
+  function solveChain(chain, target, endQ) {
+    const [a, b, e] = CHAINS[chain].map((n) => figure.joint(n));
+    const pole = new THREE.Vector3(0, 0, chain.endsWith("arm") ? -1 : 1).applyQuaternion(figure.root.quaternion);
+    solveTwoBone(a, b, e, target, pole);
+    if (endQ) holdWorldRotation(e, endQ);
   }
 
-  // Mirror rotation across X axis: R' = M R M with M = diag(-1, 1, 1)
-  const _M = new THREE.Matrix4().makeScale(-1, 1, 1);
-  const _R = new THREE.Matrix4();
-  const _TMP = new THREE.Matrix4();
-  const _Q = new THREE.Quaternion();
-
-  function mirrorQuaternionAcrossX(srcQuat, outQuat) {
-    _R.makeRotationFromQuaternion(srcQuat);
-    _TMP.copy(_M).multiply(_R).multiply(_M);
-    outQuat.setFromRotationMatrix(_TMP);
-    outQuat.normalize();
-    return outQuat;
-  }
-
-  function mirrorScaleToCounterpartIfPossible() {
-    const sel = selection.getSelected();
-    if (!sel || !sel.userData?.isJoint) return;
-
-    const cn = counterpartName(sel.name);
-    if (!cn) return;
-
-    const otherJoint = getJointByName(cn);
-    if (!otherJoint) return;
-
-    const otherMesh = findFirstPickableMesh(otherJoint);
-    const thisTarget = getGizmoTargetForSelection(sel);
-
-    if (thisTarget && thisTarget.isMesh && otherMesh && otherMesh.isMesh) {
-      otherMesh.scale.copy(thisTarget.scale);
+  function mirrorJoints(names) {
+    for (const n of names) {
+      const src = figure.joint(n), dst = figure.joint(counterpartName(n) || "");
+      if (!dst) continue;
+      if (opts.mode === "scale") dst.userData.segment.scale.copy(src.userData.segment.scale);
+      else mirrorQuaternion(src.quaternion, dst.quaternion);
     }
   }
 
-  function mirrorRotationToCounterpartIfPossible() {
-    const sel = selection.getSelected();
-    if (!sel || !sel.userData?.isJoint) return;
-
-    const cn = counterpartName(sel.name);
-    if (!cn) return;
-
-    const other = getJointByName(cn);
-    if (!other) return;
-
-    mirrorQuaternionAcrossX(sel.quaternion, _Q);
-    other.quaternion.copy(_Q);
-  }
-
-  function updateSymmetryButtonUI() {
-    if (!btnSymmetry) return;
-    btnSymmetry.textContent = SYM.enabled ? "Symmetry: On" : "Symmetry: Off";
-    btnSymmetry.classList.toggle("btn--active", !!SYM.enabled);
-  }
-
-  btnSymmetry?.addEventListener("click", () => {
-    SYM.enabled = !SYM.enabled;
-    updateSymmetryButtonUI();
-    showToast(SYM.enabled ? "Symmetry ON (body)" : "Symmetry OFF");
+  gizmo.addEventListener("change", invalidate);
+  gizmo.addEventListener("dragging-changed", (e) => {
+    orbit.enabled = !e.value;
+    if (e.value) {
+      if (drag.kind === "ik") drag.endQ = figure.joint(CHAINS[drag.chain][2]).getWorldQuaternion(new THREE.Quaternion());
+      drag.feet = drag.kind === "hips" && opts.pinFeet
+        ? ["l_leg", "r_leg"].map((c) => { const end = figure.joint(CHAINS[c][2]); return { c, pos: end.getWorldPosition(new THREE.Vector3()), q: end.getWorldQuaternion(new THREE.Quaternion()) }; })
+        : null;
+    } else {
+      if (drag.kind === "ik") { figure.joint(CHAINS[drag.chain][2]).getWorldPosition(ikHandle.position); ikHandle.updateMatrixWorld(); }
+      commit();
+    }
   });
-
-  updateSymmetryButtonUI();
-
-  // Listen to gizmo edits; mirror when enabled
   gizmo.addEventListener("objectChange", () => {
-    if (!SYM.enabled) return;
-
-    const sel = selection.getSelected();
-    if (!sel || !sel.userData?.isJoint) return;
-
-    if (STATE.mode === "rotate") {
-      mirrorRotationToCounterpartIfPossible();
-      selection.updateOutline();
-    } else if (STATE.mode === "scale") {
-      mirrorScaleToCounterpartIfPossible();
-      selection.updateOutline();
-    }
+    const sel = selection.get();
+    if (drag.kind === "ik") solveChain(drag.chain, ikHandle.position, drag.endQ);
+    else if (drag.kind === "hips" && drag.feet) for (const f of drag.feet) solveChain(f.c, f.pos, f.q);
+    // (moving the body solves each planted foot on its own, so there is nothing to mirror then)
+    if (opts.symmetry && sel?.userData.isJoint && drag.kind !== "hips" && drag.kind !== "root") mirrorJoints(drag.kind === "ik" ? CHAINS[drag.chain] : [sel.name]);
+    invalidate();
   });
 
-  /* ---------------------------- Props ---------------------------- */
-
-  function applyPropShadowsAndPickable(group) {
-    if (!group) return;
-    group.traverse((o) => {
-      if (o && o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-        if (!o.userData) o.userData = {};
-        o.userData.pickable = true;
-      }
-    });
-  }
-
-  function defaultPropColor(type) {
-    const t = String(type || "").toLowerCase();
-    if (t === "cube") return 0x24d2ff;
-    if (t === "sphere") return 0x7c5cff;
-    if (t === "cylinder") return 0x42f5b0;
-    if (t === "cone" || t === "pyramid") return 0xffc04a;
-    if (t === "torus" || t === "ring" || t === "disc") return 0xff5c8a;
-    return 0x9aa4b2;
-  }
-
-  function tintProp(group, type) {
-    const color = defaultPropColor(type);
-    group?.traverse?.((o) => {
-      if (o && o.isMesh && o.material) {
-        o.material.color?.setHex?.(color);
-        if (type === "ring" || type === "disc" || type === "plane") o.material.side = THREE.DoubleSide;
-      }
-    });
-  }
-
-  function spawnProp(type) {
-    const t = String(type || "cube").toLowerCase();
-    const prop = addPropWorld(world, scene, t, { name: `prop_${t}_${world.props.length + 1}` });
-
-    prop.position.set((Math.random() - 0.5) * 2.0, 0.28, (Math.random() - 0.5) * 2.0);
-
-    applyPropShadowsAndPickable(prop);
-    tintProp(prop, t);
-
-    return prop;
-  }
-
-  function disposeObject3D(root) {
-    if (!root) return;
-    root.traverse?.((o) => {
-      if (o?.geometry) o.geometry.dispose?.();
-      if (o?.material) {
-        if (Array.isArray(o.material)) o.material.forEach((m) => m?.dispose?.());
-        else o.material.dispose?.();
-      }
-    });
-  }
-
-  function deleteSelectedProp() {
-    const sel = selection.getSelected();
-    if (!sel) return showToast("Select a prop to delete");
-
-    // Imported model deletion
-    if (sel.userData?.isImportedModel) {
-      const root = sel.userData.importRoot || sel;
-      scene.remove(root);
-      disposeObject3D(root);
-      selection.clearSelection();
-      showToast("Imported model deleted");
-      return;
+  function setMode(m) {
+    opts.mode = m;
+    for (const b of $$("[data-mode]")) {
+      const on = b.dataset.mode === m;
+      b.classList.toggle("is-on", on);
+      b.setAttribute("aria-pressed", String(on));
     }
+    attachGizmo();
+  }
 
-    if (!sel.userData?.isProp) {
-      showToast("Select a prop to delete");
-      return;
+  /* ------------------------------------------------------------ inspector */
+
+  function fillJointSelect() {
+    const groups = [["Body", ["char_root", "hips", "spine", "chest", "neck", "head"]]];
+    for (const [side, label] of [["l", "Right"], ["r", "Left"]]) {
+      groups.push([`${label} arm`, ["shoulder", "elbow", "wrist"].map((p) => `${side}_${p}`)]);
+      groups.push([`${label} fingers`, ["thumb1", "thumb2", "index1", "index2", "middle1", "middle2", "ring1", "ring2", "pinky1", "pinky2"].map((p) => `${side}_${p}`)]);
+      groups.push([`${label} leg`, ["hip", "knee", "ankle", "toes"].map((p) => `${side}_${p}`)]);
     }
-
-    removePropWorld(world, scene, sel);
-    selection.clearSelection();
-    showToast("Prop deleted");
+    const sel = $("jointSelect");
+    sel.replaceChildren(new Option("Choose a body part…", ""));
+    for (const [label, names] of groups) {
+      const g = document.createElement("optgroup");
+      g.label = label;
+      for (const n of names) g.append(new Option(jointLabel(n), n));
+      sel.append(g);
+    }
   }
 
-  bindPropButtons({
-    addProp: (type) => spawnProp(type),
-    selectObject: (obj) => selection.setSelection(obj),
-    showToast
-  });
-
-  /* ---------------------------- Import 3D (.glb/.gltf) ---------------------------- */
-
-  const importedRoots = [];
-
-  function computeBounds(root) {
-    const box = new THREE.Box3().setFromObject(root);
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-    return { box, size, center };
+  function updateInspector() {
+    const sel = selection.get();
+    const isJ = !!sel?.userData.isJoint;
+    const kind = sel?.userData.kind;
+    $("selKind").textContent = sel ? labelOf(sel) : "None";
+    $("jointSelect").value = isJ ? sel.name : "";
+    $("inspJoint").hidden = !isJ;
+    $("inspItem").hidden = !sel || isJ;
+    $("selHint").hidden = !!sel;
+    $("propColorRow").hidden = kind !== "prop";
+    if (kind === "prop") $("propColor").value = "#" + propColor(sel).getHexString();
+    $("btnLightSettings").hidden = kind !== "light";
+    $("btnDuplicate").disabled = kind === "import";
   }
 
-  function normalizeImportedModel(root) {
-    // center to origin and scale to sane size
-    const { size, center } = computeBounds(root);
-
-    if (Number.isFinite(center.x)) root.position.sub(center);
-
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const target = 2.2; // roughly character-sized
-    const s = target / maxDim;
-    root.scale.setScalar(s);
-
-    // put it on the floor (y=0)
-    const box2 = new THREE.Box3().setFromObject(root);
-    const minY = box2.min.y;
-    if (Number.isFinite(minY)) root.position.y -= minY;
-
-    // move near character
-    root.position.x += 1.6;
-    root.position.z += 0.0;
+  function boxOf(obj) {
+    const box = new THREE.Box3();
+    obj.updateWorldMatrix(true, true);
+    obj.traverseVisible((o) => { if (o.isMesh && !o.userData.helper) box.expandByObject(o); });
+    return box;
   }
 
-  function markImportedPickable(root) {
-    root.userData.isProp = true; // so gizmo + selection UI feels consistent
-    root.userData.isImportedRoot = true;
+  function frameFigure() {
+    S.frameBox(boxOf(figure.root), 1.45);
+    syncLensUI();
+  }
 
-    root.traverse((o) => {
-      if (!o.userData) o.userData = {};
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-        o.userData.pickable = true;
+  function frameSelection() {
+    const sel = selection.get();
+    if (!sel || sel.name === "char_root") return frameFigure();
+    const box = sel.userData.isJoint ? boxOf(sel.userData.segment) : sel.userData.kind === "light" ? new THREE.Box3().setFromCenterAndSize(sel.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(0.6, 0.6, 0.6)) : boxOf(sel);
+    if (!box.isEmpty()) S.frameBox(box, 2.2);
+  }
 
-        // Selection hits meshes, so mark them as imported + store root for delete/transform targeting
-        o.userData.isImportedModel = true;
-        o.userData.importRoot = root;
-        o.userData.isProp = true;
-      }
+  function selectRelative(dir) {
+    const sel = selection.get();
+    if (!sel?.userData.isJoint) return selection.set(figure.joint("hips"));
+    const next = dir < 0 ? sel.parent : sel.children.find((c) => c.userData.isJoint);
+    if (next?.userData.isJoint) selection.set(next);
+  }
+
+  function deleteSelected() {
+    const sel = selection.get();
+    if (!sel || sel.userData.isJoint) return;
+    world.remove(sel);
+    selection.set(null);
+    commit();
+    toast(`${sel.name} deleted — Ctrl+Z brings it back`);
+  }
+
+  function duplicateSelected() {
+    const sel = selection.get();
+    if (!sel || sel.userData.isJoint) return;
+    let copy = null;
+    if (sel.userData.kind === "prop") copy = createProp(sel.userData.type, { color: propColor(sel).getHex() });
+    else if (sel.userData.kind === "light") {
+      if (world.live("light").length >= MAX_LIGHTS) return toast(`Up to ${MAX_LIGHTS} lights`);
+      copy = createCustomLight(sel.userData.lightType, lightParams(sel));
+    } else return toast("Imported models can't be duplicated — import the file again");
+    copy.name = sel.name;
+    copy.position.copy(sel.position).add(new THREE.Vector3(0.3, 0, 0.3));
+    copy.quaternion.copy(sel.quaternion);
+    copy.scale.copy(sel.scale);
+    world.add(copy);
+    selection.set(copy);
+    commit();
+  }
+
+  /* ------------------------------------------------------------ clean renders: export + thumbnails */
+
+  function cleanRender({ scale = 1, transparent = false, grid = false, floorOn = true, ref = false } = {}, read) {
+    const changed = [];
+    const vis = (o, v) => { if (o && o.visible !== v) { changed.push([o, o.visible]); o.visible = v; } };
+    const gridShown = S.grid().visible;
+    scene.traverse((o) => { if (o.userData.helper) vis(o, false); }); // gizmo, floor ring, bulbs, cones, axes, grid
+    vis(S.grid(), grid && gridShown);
+    vis(floor, floorOn && floor.visible);
+    vis(reference.mesh, ref && reference.mesh.visible);
+    const bg = scene.background, fog = scene.fog, floorMat = floor.material;
+    if (transparent) { scene.background = null; scene.fog = null; floor.material = shadowCatcher; }
+    const pr = renderer.getPixelRatio();
+    const w = canvas.clientWidth * pr, h = canvas.clientHeight * pr;
+    const k = Math.min(scale, 8192 / Math.max(w, h));
+    if (k !== 1) renderer.setPixelRatio(pr * k);
+    try {
+      return selection.withoutHighlights(() => { renderer.render(scene, camera); return read(renderer.domElement); });
+    } finally {
+      if (k !== 1) renderer.setPixelRatio(pr);
+      scene.background = bg; scene.fog = fog; floor.material = floorMat;
+      for (const [o, v] of changed.reverse()) o.visible = v;
+      invalidate();
+    }
+  }
+
+  function captureThumb(size = 256) {
+    return cleanRender({}, (src) => {
+      const c = document.createElement("canvas");
+      c.width = c.height = size;
+      const s = Math.min(src.width, src.height);
+      c.getContext("2d").drawImage(src, (src.width - s) / 2, (src.height - s) / 2, s, s, 0, 0, size, size);
+      const webp = c.toDataURL("image/webp", 0.82);
+      return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/jpeg", 0.85);
     });
   }
 
-  async function importGLTFFile(file) {
-    if (!file) return;
+  function exportOptions() {
+    const f = $("exportDialog").querySelector("form");
+    return { scale: Number(f.scale.value), transparent: f.transparent.checked, floorOn: f.floor.checked, grid: f.grid.checked, ref: f.reference.checked };
+  }
 
+  function updateExportSize() {
+    const pr = renderer.getPixelRatio();
+    const { scale } = exportOptions();
+    const w = canvas.clientWidth * pr, h = canvas.clientHeight * pr;
+    const k = Math.min(scale, 8192 / Math.max(w, h));
+    $("exportSize").textContent = `${Math.round(w * k)} × ${Math.round(h * k)} px · the current view`;
+  }
+
+  async function exportBlob() {
+    const url = cleanRender(exportOptions(), (c) => c.toDataURL("image/png"));
+    return (await fetch(url)).blob();
+  }
+
+  /* ------------------------------------------------------------ files */
+
+  async function importModel(file) {
     const url = URL.createObjectURL(file);
     try {
-      const loader = new GLTFLoader();
-      const gltf = await new Promise((resolve, reject) => {
-        loader.load(url, resolve, undefined, reject);
-      });
-
+      const gltf = await new GLTFLoader().loadAsync(url);
       const root = gltf.scene || gltf.scenes?.[0];
-      if (!root) throw new Error("No scene in GLTF");
-
-      root.name = file.name || "ImportedModel";
-      normalizeImportedModel(root);
-      markImportedPickable(root);
-
-      scene.add(root);
-      importedRoots.push(root);
-
-      selection.setSelection(root);
-      selection.focusSelection?.();
-      showToast(`Imported: ${root.name}`);
-    } catch (e) {
-      console.warn(e);
-      showToast("Import failed (invalid .glb/.gltf)", 1800);
+      if (!root) throw new Error("empty");
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      if (maxDim < 0.05 || maxDim > 6) root.scale.setScalar(1.6 / maxDim); // keep real-world (metre) models as they are
+      box.setFromObject(root);
+      const c = box.getCenter(new THREE.Vector3());
+      root.position.sub(new THREE.Vector3(c.x - 1.1, box.min.y, c.z));
+      world.add(markImport(root, file.name.replace(/\.(glb|gltf)$/i, "")));
+      selection.set(root);
+      commit();
+      toast(`Imported ${root.name}`);
+    } catch {
+      toast("Couldn't read that model. Use a .glb (or a .gltf with embedded data).", 3200);
     } finally {
       URL.revokeObjectURL(url);
     }
   }
 
-  btnImport3D?.addEventListener("click", () => fileModel?.click?.());
-  fileModel?.addEventListener("change", async (e) => {
-    const file = e.target?.files?.[0];
-    if (!file) return;
-    await importGLTFFile(file);
-    fileModel.value = "";
-  });
-
-  /* ---------------------------- Reference Image (NEW) ---------------------------- */
-
-  // ensure camera is in scene graph so camera children render
-  try { if (!camera.parent) scene.add(camera); } catch {}
-
-  // reference state
-  if (!STATE.reference) {
-    STATE.reference = {
-      enabled: false,
-      opacity: 0.65,
-      size: 3.2,
-      offsetX: 0,
-      offsetY: 0,
-      flipX: false,
-      url: "",
-      aspect: 1
-    };
-  }
-
-  const refGroup = new THREE.Group();
-  refGroup.name = "reference_overlay_group";
-  refGroup.userData.nonPickable = true;
-  refGroup.visible = false;
-  camera.add(refGroup);
-
-  const refMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: STATE.reference.opacity ?? 0.65,
-    depthTest: false,
-    depthWrite: false
-  });
-
-  const refGeo = new THREE.PlaneGeometry(1, 1);
-  const refMesh = new THREE.Mesh(refGeo, refMat);
-  refMesh.name = "reference_overlay_mesh";
-  refMesh.userData.nonPickable = true;
-  refMesh.renderOrder = 9999;
-  refGroup.add(refMesh);
-
-  // place it in front of camera
-  const REF_Z = -3.0;
-
-  function updateReferenceTransform() {
-    const r = STATE.reference;
-
-    const aspect = Number(r.aspect) || 1;
-    const size = Number(r.size) || 3.2;
-
-    // scale plane to aspect * size
-    const sx = size * aspect * (r.flipX ? -1 : 1);
-    const sy = size;
-
-    refMesh.scale.set(sx, sy, 1);
-    refMesh.position.set(Number(r.offsetX) || 0, Number(r.offsetY) || 0, REF_Z);
-
-    refMat.opacity = clamp(Number(r.opacity ?? 0.65), 0, 1);
-    refGroup.visible = !!r.enabled;
-  }
-
-  function syncReferenceUIFromState() {
-    if (!STATE.reference) return;
-    const r = STATE.reference;
-
-    if (refShow) refShow.checked = !!r.enabled;
-    if (refOpacity) refOpacity.value = String(r.opacity ?? 0.65);
-    if (refSize) refSize.value = String(r.size ?? 3.2);
-    if (refOffsetX) refOffsetX.value = String(r.offsetX ?? 0);
-    if (refOffsetY) refOffsetY.value = String(r.offsetY ?? 0);
-    if (refFlipX) refFlipX.checked = !!r.flipX;
-  }
-
-  function applyReferenceUIToState() {
-    if (!STATE.reference) return;
-    const r = STATE.reference;
-
-    if (refShow) r.enabled = !!refShow.checked;
-    if (refOpacity) r.opacity = Number(refOpacity.value);
-    if (refSize) r.size = Number(refSize.value);
-    if (refOffsetX) r.offsetX = Number(refOffsetX.value);
-    if (refOffsetY) r.offsetY = Number(refOffsetY.value);
-    if (refFlipX) r.flipX = !!refFlipX.checked;
-
-    updateReferenceTransform();
-    renderer.render(scene, camera);
-  }
-
-  function clearReferenceImage() {
-    const r = STATE.reference;
-    if (refMat.map) {
-      try { refMat.map.dispose?.(); } catch {}
-    }
-    refMat.map = null;
-    refMat.needsUpdate = true;
-
-    r.url = "";
-    r.aspect = 1;
-    r.enabled = false;
-
-    updateReferenceTransform();
-    syncReferenceUIFromState();
-    renderer.render(scene, camera);
-    showToast("Reference cleared");
-  }
-
-  async function loadReferenceFile(file) {
-    if (!file) return;
-
-    const url = URL.createObjectURL(file);
+  async function loadReference(file) {
     try {
-      const tex = await new Promise((resolve, reject) => {
-        const loader = new THREE.TextureLoader();
-        loader.load(url, resolve, undefined, reject);
-      });
-
-      // modern three uses colorSpace
-      if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
-
-      refMat.map = tex;
-      refMat.needsUpdate = true;
-
-      const img = tex.image;
-      const w = img?.width || 1;
-      const h = img?.height || 1;
-
-      STATE.reference.url = url; // keep for debugging (object URL)
-      STATE.reference.aspect = w / h;
-      STATE.reference.enabled = true;
-
-      // keep UI defaults if blank
-      if (refShow) refShow.checked = true;
-      if (refOpacity && !refOpacity.value) refOpacity.value = "0.65";
-
-      updateReferenceTransform();
-      syncReferenceUIFromState();
-      renderer.render(scene, camera);
-
-      showToast("Reference loaded");
-    } catch (e) {
-      console.warn(e);
-      showToast("Reference load failed", 1600);
-      try { URL.revokeObjectURL(url); } catch {}
+      await reference.load(file);
+      syncReferenceUI();
+      applyFloorVisibility();
+      $$("details[data-key='reference']").forEach((d) => (d.open = true));
+      toast("Reference loaded");
+    } catch {
+      toast("Couldn't read that image");
     }
   }
 
-  btnRefLoad?.addEventListener("click", () => fileRef?.click?.());
-  fileRef?.addEventListener("change", async (e) => {
-    const file = e.target?.files?.[0];
-    if (!file) return;
-    await loadReferenceFile(file);
-    fileRef.value = "";
-  });
-
-  btnRefClear?.addEventListener("click", clearReferenceImage);
-
-  [refShow, refOpacity, refSize, refOffsetX, refOffsetY, refFlipX].forEach((el) => {
-    el?.addEventListener("input", applyReferenceUIToState);
-    el?.addEventListener("change", applyReferenceUIToState);
-  });
-
-  // Fit buttons
-  function refFitCenter() {
-    STATE.reference.offsetX = 0;
-    STATE.reference.offsetY = 0;
-    syncReferenceUIFromState();
-    updateReferenceTransform();
-    renderer.render(scene, camera);
+  function warnMissing(missing) {
+    if (missing?.length) toast(`Re-import to restore: ${missing.join(", ")}`, 3600);
   }
 
-  function refFitLeft() {
-    const aspect = Number(STATE.reference.aspect) || 1;
-    const size = Number(STATE.reference.size) || 3.2;
-    STATE.reference.offsetX = -(size * aspect) * 0.55;
-    STATE.reference.offsetY = 0;
-    syncReferenceUIFromState();
-    updateReferenceTransform();
-    renderer.render(scene, camera);
+  async function handleFiles(files) {
+    const list = [...files];
+    const poses = [];
+    for (const f of list) {
+      const n = f.name.toLowerCase();
+      if (f.type.startsWith("image/")) await loadReference(f);
+      else if (/\.(glb|gltf)$/.test(n)) await importModel(f);
+      else if (n.endsWith(".json")) {
+        try { poses.push({ name: f.name.replace(/\.json$/i, ""), data: JSON.parse(await f.text()) }); }
+        catch { toast(`${f.name} isn't valid JSON`); }
+      }
+    }
+    if (!poses.length) return;
+
+    // one pose file: open it. Several (a pack) or a gallery export: add them to the gallery.
+    if (poses.length === 1 && poses[0].data?.kind !== "gallery") {
+      try {
+        const r = loadDoc(poses[0].data);
+        if (r.notes !== null) $("poseNotes").value = r.notes;
+        commit();
+        toast(`Opened ${poses[0].name}`);
+        warnMissing(r.missing);
+      } catch { toast(`${poses[0].name} isn't a PoseSandbox pose`); }
+      return;
+    }
+    const keep = snapshot();
+    let added = 0;
+    for (const { name, data } of poses) {
+      const entries = data?.kind === "gallery" && Array.isArray(data.items) ? data.items : [{ name, pose: data }];
+      for (const it of entries) {
+        try {
+          if (it.thumb) { if (gallery.add({ pose: it.pose, thumb: it.thumb, name: it.name, notes: it.notes || "" })) added++; continue; }
+          loadDoc(it.pose, { camera: false });
+          if (gallery.add({ pose: it.pose, thumb: captureThumb(256), name: it.name, notes: it.pose.notes || "" })) added++;
+        } catch { /* not a pose: skip */ }
+      }
+    }
+    loadDoc(JSON.parse(keep), { camera: false });
+    $$("details[data-key='gallery']").forEach((d) => (d.open = true));
+    toast(added ? `Added ${added} pose${added > 1 ? "s" : ""} to the gallery` : "No poses found in those files");
   }
 
-  function refFitRight() {
-    const aspect = Number(STATE.reference.aspect) || 1;
-    const size = Number(STATE.reference.size) || 3.2;
-    STATE.reference.offsetX = (size * aspect) * 0.55;
-    STATE.reference.offsetY = 0;
-    syncReferenceUIFromState();
-    updateReferenceTransform();
-    renderer.render(scene, camera);
-  }
-
-  function refHalfSize() {
-    STATE.reference.size = Math.max(1, (Number(STATE.reference.size) || 3.2) * 0.5);
-    syncReferenceUIFromState();
-    updateReferenceTransform();
-    renderer.render(scene, camera);
-  }
-
-  function refFullSize() {
-    STATE.reference.size = 3.2;
-    STATE.reference.offsetX = 0;
-    STATE.reference.offsetY = 0;
-    syncReferenceUIFromState();
-    updateReferenceTransform();
-    renderer.render(scene, camera);
-  }
-
-  btnRefFitCenter?.addEventListener("click", () => { refFitCenter(); showToast("Reference centered"); });
-  btnRefFitLeft?.addEventListener("click", () => { refFitLeft(); showToast("Reference left"); });
-  btnRefFitRight?.addEventListener("click", () => { refFitRight(); showToast("Reference right"); });
-  btnRefHalf?.addEventListener("click", () => { refHalfSize(); showToast("Reference half size"); });
-  btnRefFull?.addEventListener("click", () => { refFullSize(); showToast("Reference reset"); });
-
-  // init reference UI + transform
-  syncReferenceUIFromState();
-  updateReferenceTransform();
-
-  /* ---------------------------- Pose I/O ---------------------------- */
-
-  function serializePoseForGallery() {
-    return serializePose({ world, poseNotesEl: poseNotes });
-  }
-
-  function resetAllJointRotations() {
-    (world.joints || []).forEach((j) => {
-      const r = REST.get(j.name);
-      if (r?.quat) j.quaternion.copy(r.quat);
-      else j.rotation.set(0, 0, 0);
-    });
-  }
-
-  function resetAllJointTransforms() {
-    (world.joints || []).forEach((j) => {
-      const r = REST.get(j.name);
-      if (!r) return;
-
-      j.position.copy(r.pos);
-      j.quaternion.copy(r.quat);
-      j.scale.copy(r.scale);
-
-      const mesh = findFirstPickableMesh(j);
-      if (mesh && r.meshScale) mesh.scale.copy(r.meshScale);
-    });
-  }
-
-  function resetPose() {
-    resetAllJointTransforms();
-    selection.updateOutline();
-    attachGizmoForCurrentMode();
-    showToast("Pose reset (move + rotate + scale)");
-  }
-
-  function forceRenderOnce() {
-    renderer.render(scene, camera);
-  }
-
-  function applyPoseToScene(data) {
-    return applyPose(data, {
-      world,
-      scene,
-      poseNotesEl: poseNotes,
-      addProp: (type) => spawnProp(type),
-      showToast,
-      updateOutline: () => selection.updateOutline(),
-      forceRenderOnce
-    });
-  }
-
-  function applyPoseJointsOnlyToScene(data) {
-    return applyPoseJointsOnly(data, {
-      world,
-      resetAllJointRotations,
-      showToast,
-      updateOutline: () => selection.updateOutline(),
-      forceRenderOnce
-    });
-  }
-
-  function randomPose() {
-    const names = new Set(["l_shoulder", "r_shoulder", "l_elbow", "r_elbow", "neck", "chest"]);
-    world.joints.forEach((j) => {
-      if (!names.has(j.name)) return;
-      j.rotation.x = (Math.random() - 0.5) * 0.9;
-      j.rotation.y = (Math.random() - 0.5) * 0.9;
-      j.rotation.z = (Math.random() - 0.5) * 0.9;
-    });
-    selection.updateOutline();
-    showToast("Random pose");
-  }
-
-  /* ---------------------------- Gallery ---------------------------- */
-
-  function captureThumbnail(size = 256) {
-    renderer.render(scene, camera);
-
-    const src = renderer.domElement;
-    const thumb = document.createElement("canvas");
-    thumb.width = size;
-    thumb.height = size;
-
-    const ctx = thumb.getContext("2d", { willReadFrequently: false });
-    if (!ctx) return null;
-
-    const sw = src.width;
-    const sh = src.height;
-    const s = Math.min(sw, sh);
-    const sx = Math.floor((sw - s) / 2);
-    const sy = Math.floor((sh - s) / 2);
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(src, sx, sy, s, s, 0, 0, size, size);
-
-    try { return thumb.toDataURL("image/png"); } catch { return null; }
-  }
+  /* ------------------------------------------------------------ gallery */
 
   const gallery = new Gallery({
-    key: "pose_sandbox_gallery_v1",
-    maxItems: 30,
-    serializePose: serializePoseForGallery,
-    applyPose: (poseObj) => applyPoseToScene(poseObj),
-    captureThumbnail,
-    showToast,
-    niceTime,
-    poseNotesEl: poseNotes,
-    containerEl: poseGallery
+    containerEl: $("poseGallery"),
+    toast,
+    onOpen: (it) => {
+      const r = loadDoc(it.pose);
+      $("poseNotes").value = it.notes || "";
+      commit();
+      warnMissing(r.missing);
+    }
   });
 
-  gallery.loadFromStorage();
-  gallery.render();
-
-  /* ---------------------------- Presets ---------------------------- */
-  const presetsUI = new PresetsUI({
-    containerEl: presetGallery,
-    btnApplyEl: btnPresetApply,
-    btnSaveEl: btnPresetSave,
-    presets: createPresets(),
-    applyPoseJointsOnly: (poseObj) => applyPoseJointsOnlyToScene(poseObj),
-    saveToGallery: ({ name = "", withToast = true } = {}) => gallery.saveCurrentPoseToGallery({ name, withToast }),
-    showToast,
-    applyOnClick: true
-  });
-  presetsUI.init();
-
-  /* ---------------------------- Help modal ---------------------------- */
-  function openHelp() {
-    helpModal?.classList?.remove?.("hidden");
-    showToast("Help opened");
-    btnCloseHelp?.focus?.();
+  function saveToGallery() {
+    const item = gallery.add({ pose: serializeScene(ctx, { notes: notes() }), thumb: captureThumb(256), notes: notes() });
+    if (item) {
+      $$("details[data-key='gallery']").forEach((d) => (d.open = true));
+      toast(`Saved “${item.name}”`);
+    }
   }
 
-  function closeHelp() {
-    helpModal?.classList?.add?.("hidden");
-    showToast("Help closed");
+  /* ------------------------------------------------------------ poses */
+
+  function randomPose() {
+    const R = (a, b) => THREE.MathUtils.degToRad(a + Math.random() * (b - a));
+    const e = new THREE.Euler(0, 0, 0, "ZYX");
+    const set = (n, x, y, z) => figure.joint(n).quaternion.setFromEuler(e.set(x, y, z, "ZYX"));
+    figure.resetPose({ keepRoot: true });
+    set("spine", R(-8, 20), R(-20, 20), R(-8, 8));
+    set("chest", R(-8, 15), R(-20, 20), R(-8, 8));
+    set("neck", R(-10, 15), R(-25, 25), R(-6, 6));
+    set("head", R(-15, 15), R(-20, 20), R(-8, 8));
+    for (const [s, k] of [["l", -1], ["r", 1]]) {
+      set(`${s}_shoulder`, R(-100, 40), R(-30, 30), k * R(0, 110));
+      set(`${s}_elbow`, R(-120, 0), 0, 0);
+      set(`${s}_wrist`, R(-20, 20), R(-30, 30), R(-25, 25));
+      set(`${s}_hip`, R(-75, 25), R(-15, 15), k * R(0, 25));
+      set(`${s}_knee`, R(0, 95), 0, 0);
+      set(`${s}_ankle`, R(-15, 25), 0, 0);
+    }
+    const hands = Object.keys(HAND_POSES);
+    applyHandPose(figure, "l", hands[Math.floor(Math.random() * hands.length)]);
+    applyHandPose(figure, "r", hands[Math.floor(Math.random() * hands.length)]);
+    figure.ground();
   }
 
-  btnHelp?.addEventListener("click", (e) => { e.preventDefault(); openHelp(); });
-  btnCloseHelp?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); closeHelp(); });
-  btnHelpOk?.addEventListener("click", (e) => { e.preventDefault(); closeHelp(); });
-  helpModal?.addEventListener("click", (e) => { if (e.target?.dataset?.close === "true") closeHelp(); });
-
-  /* ---------------------------- Lighting wiring ---------------------------- */
-
-  function syncLightingUIFromLights() {
-    if (!lights) return;
-
-    keyIntensity && (keyIntensity.value = String(lights.key.intensity ?? 0));
-    fillIntensity && (fillIntensity.value = String(lights.fill.intensity ?? 0));
-    rimIntensity && (rimIntensity.value = String(lights.rim.intensity ?? 0));
-    ambIntensity && (ambIntensity.value = String(lights.ambient.intensity ?? 0));
-    hemiIntensity && (hemiIntensity.value = String(lights.hemi.intensity ?? 0));
-
-    keyColor && (keyColor.value = hexToColorInput(lights.key.color));
-    fillColor && (fillColor.value = hexToColorInput(lights.fill.color));
-    rimColor && (rimColor.value = hexToColorInput(lights.rim.color));
-    ambColor && (ambColor.value = hexToColorInput(lights.ambient.color));
-
-    hemiSky && (hemiSky.value = hexToColorInput(lights.hemi.color));
-    hemiGround && (hemiGround.value = hexToColorInput(lights.hemi.groundColor));
+  function poseAction(fn, msg) {
+    fn();
+    selection.repaint();
+    attachGizmo();
+    commit();
+    if (msg) toast(msg, 900);
   }
 
-  function applyLightingUIToLights() {
-    if (!lights) return;
-
-    lights.key.intensity = Number(keyIntensity?.value ?? lights.key.intensity);
-    lights.fill.intensity = Number(fillIntensity?.value ?? lights.fill.intensity);
-    lights.rim.intensity = Number(rimIntensity?.value ?? lights.rim.intensity);
-    lights.ambient.intensity = Number(ambIntensity?.value ?? lights.ambient.intensity);
-    lights.hemi.intensity = Number(hemiIntensity?.value ?? lights.hemi.intensity);
-
-    if (keyColor) lights.key.color.setHex(colorInputToHex(keyColor.value));
-    if (fillColor) lights.fill.color.setHex(colorInputToHex(fillColor.value));
-    if (rimColor) lights.rim.color.setHex(colorInputToHex(rimColor.value));
-    if (ambColor) lights.ambient.color.setHex(colorInputToHex(ambColor.value));
-
-    if (hemiSky) lights.hemi.color.setHex(colorInputToHex(hemiSky.value));
-    if (hemiGround) lights.hemi.groundColor.setHex(colorInputToHex(hemiGround.value));
-
-    // key direction dropdown
-    if (keyDir) setKeyDirectionByName(lights, keyDir.value);
-
-    renderer.render(scene, camera);
+  function renderPresets() {
+    const grid = $("presetGrid");
+    grid.replaceChildren();
+    for (const p of PRESETS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tile";
+      b.title = `Apply “${p.name}”`;
+      const img = document.createElement("img");
+      img.alt = "";
+      if (p.thumb) img.src = p.thumb;
+      const name = document.createElement("span");
+      name.className = "tile__name";
+      name.textContent = p.name;
+      b.append(img, name);
+      b.addEventListener("click", () => poseAction(() => {
+        applyPreset(figure, p);
+        $("handR").value = p.handsL || p.hands || "relaxed";
+        $("handL").value = p.handsR || p.hands || "relaxed";
+      }));
+      grid.append(b);
+    }
   }
 
-  function setLightingPreset(name) {
-    if (!lights) return;
-    const preset = String(name || "studio");
-    applyLightingPreset(lights, preset);
-
-    // keep direction dropdown coherent for "studio"
-    if (keyDir && preset === "studio") keyDir.value = "front_right";
-
-    syncLightingUIFromLights();
-    renderer.render(scene, camera);
-    showToast(`Lighting: ${preset}`);
-  }
-
-  lightPreset?.addEventListener("change", () => setLightingPreset(lightPreset.value));
-  keyDir?.addEventListener("change", () => applyLightingUIToLights());
-
-  [
-    keyIntensity, keyColor,
-    fillIntensity, fillColor,
-    rimIntensity, rimColor,
-    ambIntensity, ambColor,
-    hemiIntensity, hemiSky, hemiGround
-  ].forEach((el) => el?.addEventListener("input", applyLightingUIToLights));
-
-  btnResetLights?.addEventListener("click", () => {
-    const preset = lightPreset?.value || "studio";
-    setLightingPreset(preset);
-  });
-
-  // init lighting UI from current scene defaults
-  syncLightingUIFromLights();
-
-  /* ---------------------------- UI wiring ---------------------------- */
-
-  togGrid?.addEventListener("change", () => {
-    setShowGrid(STATE, !!togGrid.checked);
-    if (gridHelper) gridHelper.visible = !!STATE.showGrid;
-  });
-
-  togAxes?.addEventListener("change", () => {
-    setShowAxes(STATE, !!togAxes.checked);
-    if (axesHelper) axesHelper.visible = !!STATE.showAxes;
-  });
-
-  togOutline?.addEventListener("change", () => {
-    setShowOutline(STATE, !!togOutline.checked);
-    selection.updateOutline();
-  });
-
-  btnResetPose?.addEventListener("click", resetPose);
-  btnRandomPose?.addEventListener("click", randomPose);
-
-  btnSavePose?.addEventListener("click", () => {
-    const data = serializePoseForGallery();
-    downloadJson("pose.json", data);
-    gallery.saveCurrentPoseToGallery({ name: "", withToast: false });
-    showToast("Saved pose.json + gallery");
-  });
-
-  btnLoadPose?.addEventListener("click", () => filePose?.click?.());
-  filePose?.addEventListener("change", async (e) => {
-    const file = e.target?.files?.[0];
-    if (!file) return;
+  /** Thumbnails of the pose library, rendered once from a fixed camera with props and lights hidden. */
+  function makePresetThumbs() {
+    const keep = figure.capture();
+    const cam = S.cameraState();
+    const hidden = world.live().filter((o) => o.visible);
+    hidden.forEach((o) => (o.visible = false));
+    camera.position.set(1.3, 1.1, 2.3);
+    camera.lookAt(0, 0.86, 0);
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      applyPoseToScene(data);
-    } catch (err) {
-      console.warn(err);
-      showToast("Load failed (invalid json)", 1800);
-    }
-    filePose.value = "";
-  });
-
-  btnExport?.addEventListener("click", () => exportPNG(renderer, scene, camera));
-
-  btnDelProp?.addEventListener("click", deleteSelectedProp);
-
-  btnScatter?.addEventListener("click", () => {
-    const types = PROP_TYPES.length ? PROP_TYPES : ["cube", "sphere"];
-    for (let i = 0; i < 5; i++) {
-      const t = types[Math.floor(Math.random() * types.length)];
-      spawnProp(t);
-    }
-    showToast("Scattered props");
-  });
-
-  bgTone?.addEventListener("change", () => setBackgroundTone(scene, bgTone.value));
-
-  btnPerf?.addEventListener("click", () => {
-    setPerfEnabled(STATE, !STATE.perfEnabled);
-    showToast(STATE.perfEnabled ? "Perf: ON" : "Perf: OFF");
-  });
-
-  btnSaveGallery?.addEventListener("click", () => gallery.saveCurrentPoseToGallery({ withToast: true }));
-  btnRenamePose?.addEventListener("click", () => gallery.renameSelected());
-  btnDeletePose?.addEventListener("click", () => gallery.deleteSelected());
-  btnClearGallery?.addEventListener("click", () => gallery.clearAll());
-
-  /* ---------------------------- Input routing ---------------------------- */
-
-  input.on("pointerdown", (evt) => {
-    selection.onPointerDown(evt.originalEvent);
-
-    // ✅ If a child mesh of an imported model is selected, promote to the import root
-    const sel = selection.getSelected?.();
-    const root = sel?.userData?.importRoot;
-    if (root && root.userData?.isImportedRoot) {
-      selection.setSelection(root);
-    }
-
-    attachGizmoForCurrentMode();
-  });
-
-  input.on("keydown", (evt) => {
-    const e = evt.originalEvent;
-    const k = String(evt.keyLower || "").toLowerCase();
-
-    if (e.key === "Escape") {
-      if (helpModal && !helpModal.classList.contains("hidden")) {
-        closeHelp();
-        return;
+      for (const p of PRESETS) {
+        applyPreset(figure, p);
+        p.thumb = captureThumb(140);
       }
-      selection.clearSelection();
-      return;
+    } finally {
+      figure.restore(keep);
+      S.setCameraState(cam);
+      hidden.forEach((o) => (o.visible = true));
+      invalidate();
     }
+    renderPresets();
+  }
 
-    // modes
-    if (k === "1" || k === "2" || k === "3" || k === "4") {
-      modes.handleShortcut(k);
-      return;
+  /* ------------------------------------------------------------ lights panel */
+
+  function addLight(type) {
+    if (world.live("light").length >= MAX_LIGHTS) return toast(`Up to ${MAX_LIGHTS} lights at once`);
+    const g = createCustomLight(type);
+    const n = world.live("light").filter((l) => l.userData.lightType === type).length + 1;
+    g.name = `${type === "spot" ? "Spot" : "Point"} light ${n}`;
+    if (type === "spot") { g.position.set(-1.6, 2.6, 1.9); g.lookAt(0, 1.05, 0); }
+    else g.position.set(0.9, 1.55, 1.2);
+    world.add(g);
+    selection.set(g);
+    setMode("move");
+    $("lightingSection").open = true;
+    commit();
+    toast("Light added — drag the bulb to place it", 2200);
+  }
+
+  function renderLightList() {
+    const ul = $("lightList");
+    ul.replaceChildren();
+    const sel = selection.get();
+    for (const g of world.live("light")) {
+      const li = document.createElement("li");
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "pick";
+      pick.setAttribute("aria-pressed", String(g === sel));
+      const sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.color = g.userData.params.color;
+      const name = document.createElement("span");
+      name.textContent = g.name;
+      pick.append(sw, name);
+      pick.addEventListener("click", () => selection.set(g));
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "iconbtn";
+      del.setAttribute("aria-label", `Delete ${g.name}`);
+      del.innerHTML = '<svg><use href="#i-trash"/></svg>';
+      del.addEventListener("click", () => { world.remove(g); if (selection.get() === g) selection.set(null); renderLightList(); commit(); invalidate(); });
+      li.append(pick, del);
+      ul.append(li);
     }
+    syncLightEditor();
+  }
 
-    if (k === "f") {
-      selection.focusSelection();
-      return;
+  const LE = { intensity: [(v) => v, (v) => `${v}`], range: [(v) => v, (v) => (v > 0 ? `${v} m` : "∞")], angle: [(v) => v, (v) => `${v}°`], penumbra: [(v) => v, (v) => `${Math.round(v * 100)}%`] };
+
+  function syncLightEditor() {
+    const sel = selection.get();
+    const isLight = sel?.userData.kind === "light";
+    $("lightEditor").hidden = !isLight;
+    if (!isLight) return;
+    const p = sel.userData.params;
+    $("leTitle").textContent = sel.name;
+    $("leColor").value = p.color;
+    for (const k of Object.keys(LE)) {
+      const id = "le" + k[0].toUpperCase() + k.slice(1);
+      if (p[k] !== undefined) $(id).value = p[k];
+      $(id + "Out").textContent = LE[k][1](Number($(id).value));
     }
+    $("leShadow").checked = !!p.castShadow;
+    $("leBulb").checked = p.showBulb !== false;
+    $$("[data-spot]").forEach((el) => (el.hidden = sel.userData.lightType !== "spot"));
+  }
 
-    if (e.key === "Delete" || e.key === "Backspace") {
-      deleteSelectedProp();
-      return;
+  function editLight(patch, done) {
+    const sel = selection.get();
+    if (sel?.userData.kind !== "light") return;
+    applyLightParams(sel, patch);
+    syncLightEditor();
+    invalidate();
+    if (done) { renderLightList(); commit(); }
+  }
+
+  /* ------------------------------------------------------------ UI sync */
+
+  function syncStudioUI() {
+    for (const [k] of STUDIO) {
+      const l = S.lights[k];
+      $(`st_${k}`).value = l.intensity;
+      $(`st_${k}_c`).value = "#" + l.color.getHexString();
     }
+    $("lightPreset").value = env.preset;
+    $("keyDir").value = env.keyDir;
+  }
 
-    // Ctrl/Cmd + S => save to gallery
-    if ((e.ctrlKey || e.metaKey) && k === "s") {
-      e.preventDefault();
-      gallery.saveCurrentPoseToGallery({ withToast: true });
-      return;
+  function syncFigureUI() {
+    $("figBuild").value = figure.build;
+    $("figSkin").value = figure.skin;
+  }
+
+  function syncLensUI() {
+    const mm = Math.round(12 / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    $("lens").value = mm;
+    $("lensOut").textContent = `${mm} mm`;
+  }
+
+  function syncReferenceUI() {
+    const r = reference.state;
+    $("refShow").checked = r.enabled;
+    $("refBehind").checked = r.behind;
+    $("refFlip").checked = r.flipX;
+    for (const [id, k] of [["refOpacity", "opacity"], ["refSize", "size"], ["refOffsetX", "offsetX"], ["refOffsetY", "offsetY"]]) {
+      $(id).value = r[k];
+      $(id).nextElementSibling.textContent = Number(r[k]).toFixed(2);
     }
+  }
 
-    // Ctrl/Cmd + M => toggle symmetry quickly
-    if ((e.ctrlKey || e.metaKey) && k === "m") {
-      e.preventDefault();
-      SYM.enabled = !SYM.enabled;
-      updateSymmetryButtonUI();
-      showToast(SYM.enabled ? "Symmetry ON (body)" : "Symmetry OFF");
-      return;
-    }
+  /* ------------------------------------------------------------ build the panel */
 
-    selection.onKeyDown(e);
+  fillJointSelect();
+  for (const [k, v] of Object.entries(BUILDS)) $("figBuild").append(new Option(v.label, k));
+  for (const [k, v] of Object.entries(SKINS)) $("figSkin").append(new Option(v.label, k));
+  for (const [k, v] of Object.entries(BACKGROUNDS)) $("bgTone").append(new Option(v.label, k));
+  for (const sel of [$("handR"), $("handL")]) for (const [k, v] of Object.entries(HAND_POSES)) sel.append(new Option(v.label, k));
+  for (const t of PROP_BUTTONS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn";
+    b.textContent = PROP_TYPES[t].label;
+    b.addEventListener("click", () => addProp(t));
+    $("propButtons").append(b);
+  }
+  for (const [k, label, max] of STUDIO) {
+    const row = document.createElement("div");
+    row.className = "studio-row";
+    row.innerHTML = `<label class="label" for="st_${k}">${label}</label><input type="range" id="st_${k}" min="0" max="${max}" step="0.05" /><input type="color" id="st_${k}_c" aria-label="${label} colour" />`;
+    $("studioRows").append(row);
+    row.addEventListener("input", () => { S.lights[k].intensity = Number($(`st_${k}`).value); S.lights[k].color.set($(`st_${k}_c`).value); invalidate(); });
+    row.addEventListener("change", commit);
+  }
+
+  function addProp(type) {
+    const p = createProp(type);
+    p.position.set((Math.random() - 0.5) * 1.8, 0, 0.45 + Math.random() * 0.6);
+    if (type === "wall") p.position.set(0, 0, -0.9);
+    world.add(p);
+    selection.set(p);
+    commit();
+  }
+
+  /* ------------------------------------------------------------ wire events */
+
+  $("btnUndo").addEventListener("click", undo);
+  $("btnRedo").addEventListener("click", redo);
+  $$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  $("btnFocusBar").addEventListener("click", frameSelection);
+  $("btnFocus").addEventListener("click", frameSelection);
+  $("jointSelect").addEventListener("change", (e) => selection.set(figure.joint(e.target.value)));
+  $("btnResetPart").addEventListener("click", () => {
+    const j = selection.get();
+    if (!j?.userData.isJoint) return;
+    poseAction(() => { j.quaternion.identity(); j.userData.segment.scale.set(1, 1, 1); j.position.copy(figure.restPosition(j.name)); });
+  });
+  $("btnDuplicate").addEventListener("click", duplicateSelected);
+  $("btnDelete").addEventListener("click", deleteSelected);
+  $("propColor").addEventListener("input", (e) => { const s = selection.get(); if (s?.userData.kind === "prop") { propColor(s).set(e.target.value); invalidate(); } });
+  $("propColor").addEventListener("change", commit);
+  $("btnLightSettings").addEventListener("click", () => { $("lightingSection").open = true; $("lightEditor").scrollIntoView({ behavior: "smooth", block: "nearest" }); });
+
+  $$("[data-axis]").forEach((b) => b.addEventListener("click", () => {
+    opts.axes[b.dataset.axis] = !opts.axes[b.dataset.axis];
+    b.classList.toggle("is-on", opts.axes[b.dataset.axis]);
+    b.setAttribute("aria-pressed", String(opts.axes[b.dataset.axis]));
+    attachGizmo();
+  }));
+  $("rotateSnap").addEventListener("change", (e) => { opts.snap = Number(e.target.value); attachGizmo(); });
+  $("btnSpace").addEventListener("click", (e) => {
+    opts.space = opts.space === "local" ? "world" : "local";
+    e.currentTarget.textContent = opts.space === "local" ? "Local" : "World";
+    e.currentTarget.setAttribute("aria-pressed", String(opts.space === "world"));
+    attachGizmo();
+  });
+  const toggleSymmetry = () => { opts.symmetry = !opts.symmetry; $("togSym").checked = opts.symmetry; toast(opts.symmetry ? "Symmetry on" : "Symmetry off", 900); };
+  $("togSym").addEventListener("change", (e) => { opts.symmetry = e.target.checked; });
+  $("togPin").addEventListener("change", (e) => { opts.pinFeet = e.target.checked; attachGizmo(); });
+  $("btnResetPose").addEventListener("click", () => poseAction(() => figure.resetPose({ keepRoot: true }), "Pose reset"));
+  $("btnMirror").addEventListener("click", () => poseAction(() => mirrorPose(figure), "Mirrored"));
+  $("btnRandom").addEventListener("click", () => poseAction(randomPose));
+  $("btnGround").addEventListener("click", () => poseAction(() => figure.ground()));
+  for (const id of ["handR", "handL"]) $(id).addEventListener("change", (e) => poseAction(() => applyHandPose(figure, e.target.dataset.side, e.target.value)));
+
+  $("figBuild").addEventListener("change", (e) => {
+    const name = selection.get()?.userData.isJoint ? selection.get().name : null;
+    figure.create(e.target.value);
+    selection.selected = null;
+    selection.set(name ? figure.joint(name) : selection.get());
+    selection.repaint();
+    attachGizmo();
+    commit();
+  });
+  $("figSkin").addEventListener("change", (e) => { figure.setSkin(e.target.value); invalidate(); commit(); });
+  $("bgTone").addEventListener("change", (e) => { setBackground(e.target.value); commit(); });
+  $("togGrid").addEventListener("change", (e) => { opts.grid = e.target.checked; applyFloorVisibility(); });
+  $("togFloor").addEventListener("change", (e) => { opts.floor = e.target.checked; applyFloorVisibility(); });
+  $("togAxes").addEventListener("change", (e) => { S.axes.visible = e.target.checked; invalidate(); });
+  $("togHighlight").addEventListener("change", (e) => { selection.enabled = e.target.checked; selection.repaint(); invalidate(); });
+  let perfTimer = 0;
+  $("togPerf").addEventListener("change", (e) => {
+    $("perf").hidden = !e.target.checked;
+    clearInterval(perfTimer);
+    if (e.target.checked) perfTimer = setInterval(() => {
+      const st = loop.stats;
+      $("perf").textContent = `${st.ms.toFixed(1)} ms/frame · ${st.calls} draws · ${(st.tris / 1000).toFixed(1)}k tris`;
+    }, 500);
   });
 
-  /* ---------------------------- Resize ---------------------------- */
-  function onResize() {
-    resizeToCanvas({
-      camera,
-      onAfterResize: () => selection.updateOutline()
+  $("btnScatter").addEventListener("click", () => {
+    for (let i = 0; i < 5; i++) {
+      const p = createProp(PROP_BUTTONS[Math.floor(Math.random() * 7)]);
+      const a = Math.random() * Math.PI * 2, r = 0.8 + Math.random() * 1.2;
+      p.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      p.rotation.y = Math.random() * Math.PI;
+      world.add(p);
+    }
+    commit();
+    invalidate();
+  });
+  $("btnClearProps").addEventListener("click", () => {
+    const props = world.live("prop");
+    if (!props.length) return;
+    props.forEach((p) => world.remove(p));
+    if (selection.get()?.userData.kind === "prop") selection.set(null);
+    commit();
+    invalidate();
+    toast("Props removed — Ctrl+Z brings them back");
+  });
+
+  $("lightPreset").addEventListener("change", (e) => { env.preset = e.target.value; env.keyDir = S.applyLightingPreset(env.preset); syncStudioUI(); invalidate(); commit(); });
+  $("keyDir").addEventListener("change", (e) => { env.keyDir = e.target.value; S.setKeyDirection(env.keyDir); invalidate(); commit(); });
+  $("btnAddPoint").addEventListener("click", () => addLight("point"));
+  $("btnAddSpot").addEventListener("click", () => addLight("spot"));
+  $("leColor").addEventListener("input", (e) => editLight({ color: e.target.value }));
+  $("leColor").addEventListener("change", (e) => editLight({ color: e.target.value }, true));
+  for (const k of Object.keys(LE)) {
+    const el = $("le" + k[0].toUpperCase() + k.slice(1));
+    el.addEventListener("input", () => editLight({ [k]: Number(el.value) }));
+    el.addEventListener("change", () => editLight({ [k]: Number(el.value) }, true));
+  }
+  $("leShadow").addEventListener("change", (e) => editLight({ castShadow: e.target.checked }, true));
+  $("leBulb").addEventListener("change", (e) => editLight({ showBulb: e.target.checked }, true));
+  $("leAim").addEventListener("click", () => {
+    const sel = selection.get();
+    if (sel?.userData.kind !== "light") return;
+    sel.lookAt(figure.joint("chest").getWorldPosition(new THREE.Vector3()));
+    commit();
+    invalidate();
+  });
+  $("leDelete").addEventListener("click", deleteSelected);
+
+  $("lens").addEventListener("input", (e) => { S.setLens(Number(e.target.value)); $("lensOut").textContent = `${e.target.value} mm`; reference.update(); invalidate(); });
+  $$("[data-view]").forEach((b) => b.addEventListener("click", () => S.viewFrom(b.dataset.view)));
+  $("btnFrame").addEventListener("click", frameFigure);
+
+  $("btnRefLoad").addEventListener("click", () => $("fileRef").click());
+  $("fileRef").addEventListener("change", async (e) => { if (e.target.files[0]) await loadReference(e.target.files[0]); e.target.value = ""; });
+  $("btnRefClear").addEventListener("click", () => { reference.clear(); syncReferenceUI(); applyFloorVisibility(); });
+  for (const [id, k, type] of [["refShow", "enabled", "bool"], ["refBehind", "behind", "bool"], ["refFlip", "flipX", "bool"], ["refOpacity", "opacity"], ["refSize", "size"], ["refOffsetX", "offsetX"], ["refOffsetY", "offsetY"]]) {
+    $(id).addEventListener("input", (e) => {
+      reference.state[k] = type === "bool" ? e.target.checked : Number(e.target.value);
+      if (type !== "bool") e.target.nextElementSibling.textContent = Number(e.target.value).toFixed(2);
+      reference.update();
+      applyFloorVisibility();
     });
   }
 
-  let ro = null;
-  if ("ResizeObserver" in window) {
-    ro = new ResizeObserver(() => onResize());
-    ro.observe(canvas);
-  }
-  window.addEventListener("resize", onResize);
-  onResize();
+  $("btnSaveGallery").addEventListener("click", saveToGallery);
+  $("btnSaveFile").addEventListener("click", () => {
+    downloadBlob(new Blob([JSON.stringify(serializeScene(ctx, { notes: notes() }), null, 2)], { type: "application/json" }), stamp("pose") + ".json");
+    toast("Pose file saved");
+  });
+  $("btnOpenFile").addEventListener("click", () => $("filePose").click());
+  $("filePose").addEventListener("change", async (e) => { await handleFiles(e.target.files); e.target.value = ""; });
+  $("btnRename").addEventListener("click", () => gallery.rename());
+  $("btnDeletePose").addEventListener("click", () => gallery.remove());
+  $("btnClearGallery").addEventListener("click", () => gallery.clear());
+  $("btnExportGallery").addEventListener("click", () => {
+    if (!gallery.items.length) return toast("Nothing to export yet");
+    downloadBlob(gallery.exportBlob(), stamp("posesandbox-gallery") + ".json");
+  });
+  $("poseNotes").addEventListener("input", saveSessionSoon);
 
-  /* ---------------------------- Loop ---------------------------- */
-  const loop = createLoop({
-    orbit,
-    renderer,
-    scene,
-    camera,
-    getSelected: () => selection.getSelected(),
-    getShowOutline: () => STATE.showOutline,
-    outline: selection.outline,
-    perf: {
-      enabled: () => !!STATE.perfEnabled,
-      onFps: (fpsSmoothed) => {
-        if (Math.random() < 0.02) showToast(`FPS ~ ${Number(fpsSmoothed).toFixed(0)}`, 900);
-      }
+  $("btnImport3D").addEventListener("click", () => $("fileModel").click());
+  $("fileModel").addEventListener("change", async (e) => { if (e.target.files[0]) await importModel(e.target.files[0]); e.target.value = ""; });
+
+  const exportDialog = $("exportDialog");
+  const openExport = () => { updateExportSize(); exportDialog.showModal(); };
+  $("btnExport").addEventListener("click", openExport);
+  exportDialog.querySelector("form").addEventListener("change", updateExportSize);
+  $("btnDownloadPng").addEventListener("click", async () => {
+    downloadBlob(await exportBlob(), stamp() + ".png");
+    exportDialog.close();
+    toast("PNG exported");
+  });
+  $("btnCopyPng").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": exportBlob() })]);
+      exportDialog.close();
+      toast("Copied — paste it into your drawing app");
+    } catch {
+      toast("Your browser blocked copying — use Download instead", 2600);
     }
   });
+  const openHelp = () => $("helpDialog").showModal();
+  $("btnHelp").addEventListener("click", openHelp);
 
-  if (gridHelper) gridHelper.visible = !!STATE.showGrid;
-  if (axesHelper) axesHelper.visible = !!STATE.showAxes;
+  // mobile: the panel is a bottom sheet
+  $("btnPanel").addEventListener("click", () => {
+    const open = $("panel").classList.toggle("is-open");
+    $("btnPanel").setAttribute("aria-expanded", String(open));
+    $("panelHandleText").textContent = open ? "Hide tools" : "Tools";
+  });
 
-  // Init lighting preset from dropdown (keeps UI + scene in sync)
-  setLightingPreset(lightPreset?.value || "studio");
+  // remember which sections are open
+  const openKey = "posesandbox_sections";
+  let openState = {};
+  try { openState = JSON.parse(localStorage.getItem(openKey) || "{}"); } catch { /* ignore */ }
+  for (const d of $$("details[data-key]")) {
+    if (d.dataset.key in openState) d.open = openState[d.dataset.key];
+    d.addEventListener("toggle", () => { openState[d.dataset.key] = d.open; try { localStorage.setItem(openKey, JSON.stringify(openState)); } catch { /* ignore */ } });
+  }
 
-  showToast("Ready. Click a joint or prop to pose.");
-  attachGizmoForCurrentMode();
+  // drop files on the view
+  const vp = $("viewport");
+  vp.addEventListener("dragover", (e) => { e.preventDefault(); $("dropzone").hidden = false; });
+  vp.addEventListener("dragleave", (e) => { if (!vp.contains(e.relatedTarget)) $("dropzone").hidden = true; });
+  vp.addEventListener("drop", (e) => { e.preventDefault(); $("dropzone").hidden = true; handleFiles(e.dataTransfer.files); });
+
+  // keyboard: never while typing in a field or with a dialog open (v1 deleted props when you typed Backspace in Notes)
+  window.addEventListener("keydown", (e) => {
+    if (isTypingTarget(e.target) || document.querySelector("dialog[open]")) return;
+    const k = e.key.toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod) {
+      const act = { z: () => (e.shiftKey ? redo() : undo()), y: redo, s: saveToGallery, e: openExport, m: toggleSymmetry, d: duplicateSelected }[k];
+      if (act) { e.preventDefault(); act(); }
+      return;
+    }
+    if (e.altKey) return;
+    if (["1", "2", "3", "4"].includes(k)) setMode(["rotate", "move", "view", "scale"][Number(k) - 1]);
+    else if (k === "f") frameSelection();
+    else if (k === "escape") selection.set(null);
+    else if (k === "delete" || k === "backspace") { if (selection.get() && !selection.get().userData.isJoint) { e.preventDefault(); deleteSelected(); } }
+    else if (k === "[") selectRelative(-1);
+    else if (k === "]") selectRelative(1);
+    else if (k === "?") openHelp();
+  });
+
+  // any panel interaction may change the picture
+  for (const type of ["input", "change", "click"]) document.addEventListener(type, invalidate, true);
+  new ResizeObserver(() => { resize(camera); reference.update(); invalidate(); }).observe(vp);
+  resize(camera);
+  window.addEventListener("pagehide", saveSession);
+
+  /* ------------------------------------------------------------ start */
+
+  syncStudioUI();
+  syncReferenceUI();
+  gallery.load();
+  let restored = false;
+  try {
+    const doc = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (doc) {
+      const r = loadDoc(doc);
+      $("poseNotes").value = r.notes || "";
+      restored = true;
+    }
+  } catch { /* a broken session is ignored */ }
+  if (!restored) {
+    applyPreset(figure, PRESETS[0]);
+    frameFigure();
+  }
+  syncFigureUI();
+  syncLensUI();
+  renderLightList();
+  updateInspector();
+  setMode("rotate");
+  history = createHistory({
+    capture: snapshot,
+    restore: (s) => loadDoc(JSON.parse(s), { camera: false }),
+    onChange: () => { $("btnUndo").disabled = !history.canUndo(); $("btnRedo").disabled = !history.canRedo(); saveSessionSoon(); }
+  });
+  renderPresets();
   loop.start();
-} catch (err) {
-  fatal(err);
+  requestAnimationFrame(() => { makePresetThumbs(); if (restored) toast("Welcome back — your last scene is restored", 2200); });
 }

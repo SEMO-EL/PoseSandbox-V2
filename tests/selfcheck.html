@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!-- Self-checks for the editor's logic. Open it from a local server; the page title ends in PASS or FAIL. -->
+<html lang="en"><head><meta charset="utf-8"><title>PoseSandbox self-check</title>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script>
+<style>body{font:14px/1.5 system-ui;background:#0b0f17;color:#ddd;padding:20px}.ok{color:#6f6}.bad{color:#f66}</style></head>
+<body><h1>PoseSandbox self-check</h1><ol id="out"></ol>
+<script type="module">
+import * as THREE from "three";
+import { Mannequin, CHAINS } from "../character/character.js";
+import { createWorld, createProp } from "../core/world.js";
+import { createHistory } from "../core/history.js";
+import { isTypingTarget } from "../core/helpers.js";
+import { createCustomLight } from "../lights/custom-lights.js";
+import { solveTwoBone } from "../controls/ik.js";
+import { serializeScene, applyScene, mirrorPose } from "../poses/pose-io.js";
+import { PRESETS, applyPreset } from "../poses/presets.js";
+
+const results = [];
+const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail });
+const rig = () => {
+  const scene = new THREE.Scene();
+  const figure = new Mannequin(scene).create();
+  const world = createWorld(scene);
+  let cam = { position: [1, 1, 1], target: [0, 1, 0], fov: 40 };
+  return { scene, figure, world, ctx: { figure, world, cameraState: () => cam, setCameraState: (c) => (cam = c) } };
+};
+const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
+
+// 1 · IK puts the hand on a reachable target, and stops short (straight arm) on an unreachable one
+{
+  const { figure } = rig();
+  const [a, b, c] = CHAINS.l_arm.map((n) => figure.joint(n));
+  const target = new THREE.Vector3(-0.25, 1.35, 0.35);
+  const miss = solveTwoBone(a, b, c, target, new THREE.Vector3(0, 0, -1));
+  const got = c.getWorldPosition(new THREE.Vector3());
+  check("IK reaches a reachable target", miss === 0 && got.distanceTo(target) < 1e-3, `off by ${got.distanceTo(target).toExponential(2)} m`);
+  const far = new THREE.Vector3(-3, 1.4, 0);
+  const miss2 = solveTwoBone(a, b, c, far, new THREE.Vector3(0, 0, -1));
+  check("IK reports the gap to an unreachable target", miss2 > 2, `missing ${miss2.toFixed(2)} m`);
+}
+
+// 2 · save → load gives the same document (joints, moves, scales, props, lights)
+{
+  const A = rig();
+  applyPreset(A.figure, PRESETS.find((p) => p.id === "run"));
+  A.figure.joint("head").userData.segment.scale.set(1.2, 1.2, 1.2);
+  A.world.add(createProp("block", { color: "#ff0000" })).position.set(0.5, 0, 0.4);
+  A.world.add(createCustomLight("spot", { intensity: 30, angle: 20 })).position.set(-1, 2, 1);
+  const doc = serializeScene(A.ctx, { camera: true, notes: "hi" });
+  const B = rig();
+  applyScene(JSON.parse(JSON.stringify(doc)), B.ctx);
+  const ja = json(A.ctx), jb = json(B.ctx), at = [...ja].findIndex((ch, i) => ch !== jb[i]);
+  check("save → load round trip is lossless", ja === jb, at < 0 ? "" : `first difference: …${ja.slice(at - 40, at + 30)}… vs …${jb.slice(at - 40, at + 30)}…`);
+  check("camera travels with the pose", B.ctx.cameraState().fov === 40);
+}
+
+// 3 · a v1 file (bare quaternions per joint, as in the Starter Pack) still loads
+{
+  const { figure, ctx } = rig();
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-1, 0, 0));
+  applyScene({ version: 1, joints: { l_elbow: q.toArray(), char_root: [0, 0, 0, 1] }, props: [{ type: "sphere", position: [1, 0, 0] }] }, ctx);
+  check("v1 pose files load", figure.joint("l_elbow").quaternion.angleTo(q) < 1e-6 && ctx.world.live("prop").length === 1);
+}
+
+// 4 · mirroring twice gives the original pose back
+{
+  const { ctx } = rig();
+  applyPreset(ctx.figure, PRESETS.find((p) => p.id === "point"));
+  const before = json(ctx);
+  mirrorPose(ctx.figure); const once = json(ctx);
+  mirrorPose(ctx.figure);
+  check("mirror changes the pose, mirror twice restores it", once !== before && json(ctx) === before);
+}
+
+// 5 · undo / redo
+{
+  const { ctx } = rig();
+  const h = createHistory({ capture: () => json(ctx), restore: (s) => applyScene(JSON.parse(s), ctx, { camera: false }) });
+  const start = json(ctx);
+  ctx.figure.joint("r_knee").rotation.x = 1; h.commit();
+  const bent = json(ctx);
+  h.undo();
+  const undone = json(ctx);
+  h.redo();
+  check("undo restores, redo re-applies", undone === start && json(ctx) === bent && !h.canRedo());
+}
+
+// 6 · shortcuts are ignored while typing
+{
+  const ta = document.createElement("textarea"), cb = Object.assign(document.createElement("input"), { type: "checkbox" }), tx = document.createElement("input");
+  check("typing guard: text fields yes, checkboxes no", isTypingTarget(ta) && isTypingTarget(tx) && !isTypingTarget(cb));
+}
+
+// 7 · presets land on the floor
+{
+  const { figure } = rig();
+  const bad = [];
+  for (const p of PRESETS) {
+    applyPreset(figure, p);
+    figure.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    figure.root.traverse((o) => { if (o.isMesh && !o.userData.helper) box.expandByObject(o, true); });
+    const want = p.lift || 0;
+    if (Math.abs(box.min.y - want) > 1e-3) bad.push(`${p.id} ${box.min.y.toFixed(3)}`);
+  }
+  check("every preset stands on the floor", !bad.length, bad.join(", "));
+}
+
+const out = document.getElementById("out");
+for (const r of results) out.insertAdjacentHTML("beforeend", `<li class="${r.ok ? "ok" : "bad"}">${r.ok ? "PASS" : "FAIL"} — ${r.name} ${r.detail ? `<small>(${r.detail})</small>` : ""}</li>`);
+const pass = results.every((r) => r.ok);
+document.title = `PoseSandbox self-check: ${results.filter((r) => r.ok).length}/${results.length} ${pass ? "PASS" : "FAIL"}`;
+window.__result = { pass, results };
+</script></body></html>

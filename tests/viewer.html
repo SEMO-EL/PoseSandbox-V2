@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- dev viewer: the mannequin alone, ?pose=a|t -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#0b0f17}canvas{display:block;width:100%;height:100%}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import * as THREE from "three";
+import { Mannequin } from "../character/character.js";
+const q = new URLSearchParams(location.search);
+const canvas = document.getElementById("c");
+const r = new THREE.WebGLRenderer({ canvas, antialias: true });
+r.setSize(innerWidth, innerHeight, false); r.shadowMap.enabled = true; r.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f17);
+const cam = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.05, 100);
+const view = (q.get("view") || "1.6,1.3,3.2").split(",").map(Number); cam.position.set(...view); cam.lookAt(0, Number(q.get("ty") || 0.92), 0);
+scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x20242c, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(2.5, 4, 2); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 }); scene.add(key);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x161c2a })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const m = new Mannequin(scene).create(q.get("build") || "neutral");
+if (q.get("skin")) m.setSkin(q.get("skin"));
+if (q.get("pose") === "t") { m.joint("l_shoulder").rotation.z = -Math.PI / 2; m.joint("r_shoulder").rotation.z = Math.PI / 2; }
+if (q.get("preset")) { const { PRESETS, applyPreset } = await import("../poses/presets.js"); applyPreset(m, PRESETS.find((p) => p.id === q.get("preset"))); }
+if (q.get("hand")) { const { applyHandPose } = await import("../poses/hands.js"); applyHandPose(m, "l", q.get("hand")); applyHandPose(m, "r", q.get("hand")); }
+window.M = m; window.render = () => r.render(scene, cam); render();
+</script></body></html>

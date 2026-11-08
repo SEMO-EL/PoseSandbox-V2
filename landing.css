@@ -365,111 +365,8 @@ html { scroll-behavior: smooth; }
 }
 
 .previewCard__body{ padding: 14px; }
-.mockViewport{
-  position: relative;
-  height: 280px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background:
-    radial-gradient(800px 500px at 20% -10%, rgba(124,92,255,0.22), transparent 60%),
-    radial-gradient(700px 400px at 90% 0%, rgba(36,210,255,0.16), transparent 55%),
-    linear-gradient(180deg, rgba(9,12,18,0.65), rgba(7,10,16,0.55));
-  overflow:hidden;
-}
-.mockGrid{
-  position:absolute; inset:0;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-  background-size: 34px 34px;
-  opacity: 0.30;
-}
-.mockDoll{
-  position:absolute;
-  left: 50%;
-  top: 56%;
-  transform: translate(-50%,-50%);
-  width: 180px;
-  height: 220px;
-}
-.mockShadow{
-  position:absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  width: 140px;
-  height: 26px;
-  background: radial-gradient(closest-side, rgba(0,0,0,0.52), transparent 70%);
-  filter: blur(2px);
-}
-.mockHead{
-  position:absolute;
-  left: 50%;
-  top: 18px;
-  transform: translateX(-50%);
-  width: 52px; height: 56px;
-  border-radius: 16px;
-  background: rgba(195,200,216,0.95);
-  box-shadow: 0 18px 38px rgba(0,0,0,0.24);
-}
-.mockTorso{
-  position:absolute;
-  left: 50%;
-  top: 64px;
-  transform: translateX(-50%);
-  width: 94px; height: 108px;
-  border-radius: 18px;
-  background: rgba(170,176,194,0.95);
-  box-shadow: 0 18px 38px rgba(0,0,0,0.22);
-}
-.mockArm{
-  position:absolute;
-  top: 78px;
-  width: 22px; height: 108px;
-  border-radius: 16px;
-  background: rgba(154,162,184,0.95);
-  box-shadow: 0 16px 34px rgba(0,0,0,0.18);
-}
-.mockArm--l{ left: 26px; transform: rotate(6deg); }
-.mockArm--r{ right: 26px; transform: rotate(-6deg); }
 
-.mockLeg{
-  position:absolute;
-  top: 154px;
-  width: 28px; height: 120px;
-  border-radius: 16px;
-  background: rgba(123,134,160,0.95);
-  box-shadow: 0 16px 34px rgba(0,0,0,0.18);
-}
-.mockLeg--l{ left: 64px; }
-.mockLeg--r{ right: 64px; }
 
-.mockGizmo{
-  position:absolute;
-  left: 50%;
-  top: 52%;
-  transform: translate(-50%,-50%);
-  width: 140px; height: 140px;
-  opacity: 0.88;
-}
-.ring{
-  position:absolute;
-  inset: 0;
-  border-radius: 999px;
-  border: 2px solid rgba(255,255,255,0.18);
-  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.25));
-}
-.ring--x{
-  transform: rotateX(65deg);
-  border-color: rgba(255,120,140,0.40);
-}
-.ring--y{
-  transform: rotateY(65deg);
-  border-color: rgba(130,200,255,0.40);
-}
-.ring--z{
-  border-color: rgba(160,255,210,0.34);
-}
 
 .previewCard__foot{
   margin-top: 12px;
@@ -769,3 +666,14 @@ code{
   .noteCard{ flex-direction:column; align-items:flex-start; }
   .footer__inner{ flex-direction: column; align-items: flex-start; }
 }
+
+/* v2: columns that can shrink (the hero overflowed phones), real screenshot, SVG icons, reduced motion */
+.hero__inner { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
+.hero h1 { overflow-wrap: anywhere; }
+.previewCard { min-width: 0; overflow: hidden; }
+.kbdRow { flex-wrap: wrap; }
+.previewShot { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: #0b0f17; }
+.card .icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 980px) { .hero__inner { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .metaCard { min-width: 0; flex: 1 1 100px; } .hero h1 { font-size: clamp(30px, 9.5vw, 40px); } }
+@media (prefers-reduced-motion: reduce) { .reveal { opacity: 1 !important; transform: none !important; transition: none !important; } html { scroll-behavior: auto; } }

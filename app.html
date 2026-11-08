@@ -1,478 +1,280 @@
-<!-- app.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <meta name="description" content="Pose Sandbox: pose a simple 3D character, place props, save/load poses, import models, export PNG." />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
+  <meta name="description" content="PoseSandbox editor: pose an artist's mannequin in 3D, add props and lights, export clean PNG references." />
   <meta name="theme-color" content="#0b0f17" />
-  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
-  <link rel="icon" type="image/png" sizes="48x48" href="./favicon.png">
-
-  <title>Pose Sandbox — App</title>
-
+  <link rel="canonical" href="https://semo-el.github.io/PoseSandbox/app.html" />
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="48x48" href="./favicon.png" />
+  <link rel="manifest" href="./site.webmanifest" />
+  <title>PoseSandbox — Editor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
   <link rel="stylesheet" href="./styles.css" />
-
   <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-      }
-    }
+    { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
   </script>
 </head>
-
 <body>
-  <header class="topbar" role="banner">
-    <div class="brand">
-      <div class="brand__mark" aria-hidden="true">◼</div>
-      <div class="brand__text">
-        <div class="brand__title">Pose Sandbox</div>
-        <div class="brand__subtitle">Character posing • Props • Import • Export</div>
-      </div>
+  <!-- icons: Lucide-style outlines, one family -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+      <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+      <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/><path d="m5 9-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/></symbol>
+      <symbol id="i-scale" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-focus" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+      <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></symbol>
+      <symbol id="i-spot" viewBox="0 0 24 24"><path d="M9 3h6v4l3 7H6l3-7z"/><path d="M8 18l-2 3M16 18l2 3M12 18v3"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="PoseSandbox home"><span class="brand__mark" aria-hidden="true"></span><span class="brand__title">PoseSandbox</span></a>
+    <div class="group" role="group" aria-label="History">
+      <button class="iconbtn" id="btnUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+      <button class="iconbtn" id="btnRedo" type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-redo"/></svg></button>
     </div>
-
-    <div class="topbar__actions">
-      <a class="btn btn--ghost" href="./index.html" title="Back to landing">Home</a>
-
-      <button class="btn btn--ghost" id="btnImport3D" type="button" title="Import a .glb or .gltf model">
-        Import 3D
-      </button>
-      <input id="fileModel" type="file" accept=".glb,.gltf" hidden />
-
-      <button class="btn btn--ghost" id="btnHelp" type="button" aria-haspopup="dialog" aria-controls="helpModal">
-        Help
-      </button>
-      <button class="btn btn--ghost" id="btnPerf" type="button" title="Toggle performance overlay">
-        Perf
-      </button>
-      <button class="btn btn--primary" id="btnExport" type="button" title="Export current view as PNG">
-        Export PNG
-      </button>
-    </div>
+    <div class="spacer"></div>
+    <button class="btn btn--ghost" id="btnImport3D" type="button" title="Import a .glb or .gltf model"><svg><use href="#i-upload"/></svg><span class="lbl">Import 3D</span></button>
+    <button class="iconbtn" id="btnHelp" type="button" aria-label="Help and shortcuts" title="Help (?)"><svg><use href="#i-help"/></svg></button>
+    <button class="btn btn--primary" id="btnExport" type="button" title="Export PNG (Ctrl+E)"><svg><use href="#i-download"/></svg><span class="lbl">Export</span></button>
+    <input id="fileModel" type="file" accept=".glb,.gltf" hidden />
   </header>
 
-  <main class="app" role="main">
-    <aside class="panel" aria-label="Tools and controls">
-      <section class="panel__section">
-        <h2 class="panel__title">Selection</h2>
-        <div class="hint">
-          Click a joint or prop in the 3D view.
-          Then use the gizmo.
-        </div>
+  <main class="layout">
+    <aside class="panel" id="panel" aria-label="Tools">
+      <button class="panel__handle" id="btnPanel" type="button" aria-expanded="false" aria-controls="panelBody"><svg><use href="#i-sliders"/></svg><span id="panelHandleText">Tools</span></button>
+      <div class="panel__body" id="panelBody">
 
-        <div class="row">
-          <label class="label" for="selectionName">Selected</label>
-          <input id="selectionName" class="input" type="text" value="None" readonly />
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnFocus" type="button" title="Frame the selected object">Focus</button>
-          <button class="btn" id="btnClear" type="button" title="Clear selection">Clear</button>
-        </div>
-
-        <div class="row">
-          <button class="btn" id="btnSymmetry" type="button" title="Mirror body edits: L ↔ R">
-            Symmetry: Off
-          </button>
-        </div>
-      </section>
-
-      <section class="panel__section">
-        <h2 class="panel__title">Gizmo</h2>
-
-        <div class="row row--split">
-          <button class="btn btn--active" id="modeRotate" type="button" title="Shortcut: 1">Rotate</button>
-          <button class="btn" id="modeMove" type="button" title="Shortcut: 2">Move</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="modeOrbit" type="button" title="Shortcut: 3">Orbit</button>
-          <button class="btn" id="modeScale" type="button" title="Shortcut: 4">Scale</button>
-        </div>
-
-        <div class="row">
-          <label class="label">Axis lock</label>
-          <div class="chips" role="group" aria-label="Axis lock">
-            <button class="chip chip--active" id="axisX" type="button">X</button>
-            <button class="chip chip--active" id="axisY" type="button">Y</button>
-            <button class="chip chip--active" id="axisZ" type="button">Z</button>
+        <section class="card inspector" aria-labelledby="inspTitle">
+          <div class="row row--between">
+            <h2 class="card__title" id="inspTitle">Selection</h2>
+            <span class="badge" id="selKind">None</span>
           </div>
-        </div>
-
-        <div class="row">
-          <label class="label" for="rotateSnap">Rotate snap</label>
-          <select id="rotateSnap" class="select">
-            <option value="0">Off</option>
-            <option value="5">5°</option>
-            <option value="10" selected>10°</option>
-            <option value="15">15°</option>
-            <option value="30">30°</option>
-            <option value="45">45°</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <label class="label">Visual aids</label>
-          <div class="toggles">
-            <label class="toggle"><input id="togGrid" type="checkbox" checked /><span>Grid</span></label>
-            <label class="toggle"><input id="togAxes" type="checkbox" /><span>Axes</span></label>
-            <label class="toggle"><input id="togOutline" type="checkbox" checked /><span>Outline</span></label>
+          <label class="sr-only" for="jointSelect">Body part</label>
+          <select id="jointSelect" class="select"></select>
+          <p class="hint" id="selHint">Click a body part, prop or light. Drag empty space to orbit.</p>
+          <div id="inspJoint" class="stack" hidden>
+            <div class="row"><button class="btn" id="btnResetPart" type="button">Reset part</button><button class="btn" id="btnFocus" type="button">Focus <kbd>F</kbd></button></div>
           </div>
-        </div>
-      </section>
-
-      <!-- ✅ NEW: Reference Image -->
-      <section class="panel__section">
-        <h2 class="panel__title">Reference</h2>
-        <div class="hint">
-          Load a 2D reference image and pin it to the camera for pose matching.
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnRefLoad" type="button" title="Load a reference image (png/jpg/webp)">
-            Load Image
-          </button>
-          <button class="btn" id="btnRefClear" type="button" title="Clear reference image">
-            Clear
-          </button>
-        </div>
-
-        <input id="fileRef" type="file" accept="image/*" hidden />
-
-        <div class="row">
-          <label class="toggle">
-            <input id="refShow" type="checkbox" />
-            <span>Show reference</span>
-          </label>
-        </div>
-
-        <div class="row">
-          <label class="label" for="refOpacity">Opacity</label>
-          <input id="refOpacity" class="input" type="range" min="0" max="1" step="0.01" value="0.65" />
-        </div>
-
-        <div class="row">
-          <label class="label" for="refSize">Size</label>
-          <input id="refSize" class="input" type="range" min="1" max="7" step="0.05" value="3.2" />
-        </div>
-
-        <div class="row">
-          <label class="label" for="refOffsetX">Offset X</label>
-          <input id="refOffsetX" class="input" type="range" min="-4" max="4" step="0.01" value="0" />
-        </div>
-
-        <div class="row">
-          <label class="label" for="refOffsetY">Offset Y</label>
-          <input id="refOffsetY" class="input" type="range" min="-3" max="3" step="0.01" value="0" />
-        </div>
-
-        <div class="row">
-          <label class="toggle">
-            <input id="refFlipX" type="checkbox" />
-            <span>Flip horizontally</span>
-          </label>
-        </div>
-      </section>
-
-      <div class="row row--split">
-  <button class="btn" id="btnRefFitCenter" type="button">Fit Center</button>
-  <button class="btn" id="btnRefFitLeft" type="button">Fit Left</button>
-</div>
-
-<div class="row row--split">
-  <button class="btn" id="btnRefFitRight" type="button">Fit Right</button>
-  <button class="btn" id="btnRefHalf" type="button">Half Size</button>
-</div>
-
-<div class="row">
-  <button class="btn" id="btnRefFull" type="button">Full Size</button>
-</div>
-
-
-      <!-- ✅ Lighting -->
-      <section class="panel__section">
-        <h2 class="panel__title">Lighting</h2>
-        <div class="hint">
-          Adjust scene lights (strength + color + direction). Presets are a quick start.
-        </div>
-
-        <div class="row">
-          <label class="label" for="lightPreset">Preset</label>
-          <select id="lightPreset" class="select">
-            <option value="studio" selected>Studio</option>
-            <option value="flat">Flat</option>
-            <option value="moody">Moody</option>
-            <option value="rim">Rim</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <label class="label" for="keyDir">Key direction</label>
-          <select id="keyDir" class="select">
-            <option value="front_right" selected>Front Right</option>
-            <option value="front_left">Front Left</option>
-            <option value="front">Front</option>
-            <option value="top">Top</option>
-            <option value="back_right">Back Right</option>
-            <option value="back_left">Back Left</option>
-          </select>
-        </div>
-
-        <div class="row row--split">
-          <div>
-            <label class="label" for="keyIntensity">Key</label>
-            <input id="keyIntensity" class="input" type="range" min="0" max="2" step="0.01" value="0.92" />
+          <div id="inspItem" class="stack" hidden>
+            <div class="row" id="propColorRow"><label class="label" for="propColor">Colour</label><input id="propColor" type="color" /></div>
+            <div class="row"><button class="btn" id="btnDuplicate" type="button"><svg><use href="#i-copy"/></svg>Duplicate</button><button class="btn btn--danger" id="btnDelete" type="button"><svg><use href="#i-trash"/></svg>Delete</button></div>
+            <button class="btn btn--link" id="btnLightSettings" type="button" hidden>Light settings ↓</button>
           </div>
-          <div>
-            <label class="label" for="keyColor">Color</label>
-            <input id="keyColor" class="input" type="color" value="#ffffff" />
+        </section>
+
+        <details class="card" data-key="pose" open>
+          <summary>Pose</summary>
+          <div class="stack">
+            <div class="row" role="group" aria-label="Axis lock">
+              <span class="label">Axes</span>
+              <button class="chip is-on" data-axis="x" type="button" aria-pressed="true">X</button>
+              <button class="chip is-on" data-axis="y" type="button" aria-pressed="true">Y</button>
+              <button class="chip is-on" data-axis="z" type="button" aria-pressed="true">Z</button>
+            </div>
+            <div class="row">
+              <label class="label" for="rotateSnap">Snap</label>
+              <select id="rotateSnap" class="select select--sm"><option value="0">Off</option><option value="5">5°</option><option value="10">10°</option><option value="15" selected>15°</option><option value="45">45°</option></select>
+              <button class="chip" id="btnSpace" type="button" aria-pressed="false" title="Gizmo axes follow the part (Local) or the world">Local</button>
+            </div>
+            <label class="toggle"><input type="checkbox" id="togSym" /><span>Symmetry (mirror left ↔ right) <kbd>Ctrl M</kbd></span></label>
+            <label class="toggle"><input type="checkbox" id="togPin" checked /><span>Keep feet planted when moving the body</span></label>
+            <div class="grid2">
+              <button class="btn" id="btnResetPose" type="button">Reset pose</button>
+              <button class="btn" id="btnMirror" type="button">Mirror pose</button>
+              <button class="btn" id="btnRandom" type="button">Random</button>
+              <button class="btn" id="btnGround" type="button">Drop to floor</button>
+            </div>
+            <div class="grid2">
+              <label class="field"><span class="label">Right hand</span><select id="handR" class="select" data-side="l"></select></label>
+              <label class="field"><span class="label">Left hand</span><select id="handL" class="select" data-side="r"></select></label>
+            </div>
+            <h3 class="sub">Pose library</h3>
+            <div class="tiles" id="presetGrid" aria-label="Pose library"></div>
           </div>
-        </div>
+        </details>
 
-        <div class="row row--split">
-          <div>
-            <label class="label" for="fillIntensity">Fill</label>
-            <input id="fillIntensity" class="input" type="range" min="0" max="2" step="0.01" value="0.30" />
+        <details class="card" data-key="figure">
+          <summary>Figure &amp; scene</summary>
+          <div class="stack">
+            <div class="grid2">
+              <label class="field"><span class="label">Build</span><select id="figBuild" class="select"></select></label>
+              <label class="field"><span class="label">Material</span><select id="figSkin" class="select"></select></label>
+            </div>
+            <label class="field"><span class="label">Background</span><select id="bgTone" class="select"></select></label>
+            <div class="grid2">
+              <label class="toggle"><input type="checkbox" id="togGrid" checked /><span>Grid</span></label>
+              <label class="toggle"><input type="checkbox" id="togFloor" checked /><span>Floor</span></label>
+              <label class="toggle"><input type="checkbox" id="togHighlight" checked /><span>Highlight</span></label>
+              <label class="toggle"><input type="checkbox" id="togAxes" /><span>Axes</span></label>
+            </div>
+            <label class="toggle"><input type="checkbox" id="togPerf" /><span>Show render stats</span></label>
           </div>
-          <div>
-            <label class="label" for="fillColor">Color</label>
-            <input id="fillColor" class="input" type="color" value="#88bbff" />
+        </details>
+
+        <details class="card" data-key="props">
+          <summary>Props</summary>
+          <div class="stack">
+            <div class="grid3" id="propButtons"></div>
+            <div class="grid2"><button class="btn" id="btnScatter" type="button">Scatter 5</button><button class="btn btn--danger" id="btnClearProps" type="button">Remove all</button></div>
           </div>
-        </div>
+        </details>
 
-        <div class="row row--split">
-          <div>
-            <label class="label" for="rimIntensity">Rim</label>
-            <input id="rimIntensity" class="input" type="range" min="0" max="2" step="0.01" value="0.18" />
+        <details class="card" data-key="lighting" id="lightingSection">
+          <summary>Lighting</summary>
+          <div class="stack">
+            <div class="grid2">
+              <label class="field"><span class="label">Studio preset</span><select id="lightPreset" class="select"><option value="studio">Studio</option><option value="flat">Flat</option><option value="moody">Moody</option><option value="rim">Rim</option><option value="sunset">Sunset</option></select></label>
+              <label class="field"><span class="label">Key from</span><select id="keyDir" class="select"><option value="front_right">Front right</option><option value="front_left">Front left</option><option value="front">Front</option><option value="left">Side left</option><option value="right">Side right</option><option value="top">Top</option><option value="back_right">Back right</option><option value="back_left">Back left</option></select></label>
+            </div>
+            <div id="studioRows" class="stack stack--tight"></div>
+
+            <h3 class="sub">Your lights</h3>
+            <div class="grid2">
+              <button class="btn" id="btnAddPoint" type="button"><svg><use href="#i-bulb"/></svg>Add point light</button>
+              <button class="btn" id="btnAddSpot" type="button"><svg><use href="#i-spot"/></svg>Add spot light</button>
+            </div>
+            <ul class="list" id="lightList" aria-label="Your lights"></ul>
+            <div id="lightEditor" class="stack editor" hidden>
+              <div class="row row--between"><strong id="leTitle">Light</strong><span class="hint">Move <kbd>2</kbd> places it · Rotate <kbd>1</kbd> aims a spot</span></div>
+              <div class="row"><label class="label" for="leColor">Colour</label><input type="color" id="leColor" /></div>
+              <label class="slider"><span class="label">Brightness</span><input type="range" id="leIntensity" min="0" max="80" step="0.5" /><output id="leIntensityOut"></output></label>
+              <label class="slider"><span class="label">Range</span><input type="range" id="leRange" min="0" max="20" step="0.1" /><output id="leRangeOut"></output></label>
+              <label class="slider" data-spot><span class="label">Cone</span><input type="range" id="leAngle" min="3" max="85" step="1" /><output id="leAngleOut"></output></label>
+              <label class="slider" data-spot><span class="label">Softness</span><input type="range" id="lePenumbra" min="0" max="1" step="0.01" /><output id="lePenumbraOut"></output></label>
+              <div class="grid2">
+                <label class="toggle"><input type="checkbox" id="leShadow" /><span>Cast shadows</span></label>
+                <label class="toggle"><input type="checkbox" id="leBulb" /><span>Show bulb</span></label>
+              </div>
+              <div class="grid2"><button class="btn" id="leAim" type="button">Aim at figure</button><button class="btn btn--danger" id="leDelete" type="button"><svg><use href="#i-trash"/></svg>Delete light</button></div>
+            </div>
           </div>
-          <div>
-            <label class="label" for="rimColor">Color</label>
-            <input id="rimColor" class="input" type="color" value="#aad9ff" />
+        </details>
+
+        <details class="card" data-key="camera">
+          <summary>Camera</summary>
+          <div class="stack">
+            <label class="slider"><span class="label">Lens</span><input type="range" id="lens" min="18" max="135" step="1" value="35" /><output id="lensOut">35 mm</output></label>
+            <div class="grid3" id="viewButtons">
+              <button class="btn" data-view="front" type="button">Front</button><button class="btn" data-view="left" type="button">Left</button><button class="btn" data-view="right" type="button">Right</button>
+              <button class="btn" data-view="back" type="button">Back</button><button class="btn" data-view="top" type="button">Top</button><button class="btn" data-view="threequarter" type="button">¾ view</button>
+            </div>
+            <button class="btn" id="btnFrame" type="button">Frame the figure</button>
           </div>
-        </div>
+        </details>
 
-        <div class="row row--split">
-          <div>
-            <label class="label" for="ambIntensity">Ambient</label>
-            <input id="ambIntensity" class="input" type="range" min="0" max="2" step="0.01" value="0.22" />
+        <details class="card" data-key="reference">
+          <summary>Reference image</summary>
+          <div class="stack">
+            <p class="hint">Pin a photo or sketch to the camera and match the pose to it. You can also drop an image on the view.</p>
+            <div class="grid2"><button class="btn" id="btnRefLoad" type="button">Load image</button><button class="btn" id="btnRefClear" type="button">Clear</button></div>
+            <input id="fileRef" type="file" accept="image/*" hidden />
+            <div class="grid2">
+              <label class="toggle"><input type="checkbox" id="refShow" /><span>Show</span></label>
+              <label class="toggle"><input type="checkbox" id="refBehind" /><span>Behind figure</span></label>
+              <label class="toggle"><input type="checkbox" id="refFlip" /><span>Flip</span></label>
+            </div>
+            <label class="slider"><span class="label">Opacity</span><input type="range" id="refOpacity" min="0.05" max="1" step="0.01" /><output></output></label>
+            <label class="slider"><span class="label">Size</span><input type="range" id="refSize" min="0.1" max="1.6" step="0.01" /><output></output></label>
+            <label class="slider"><span class="label">Offset X</span><input type="range" id="refOffsetX" min="-1" max="1" step="0.01" /><output></output></label>
+            <label class="slider"><span class="label">Offset Y</span><input type="range" id="refOffsetY" min="-0.6" max="0.6" step="0.01" /><output></output></label>
           </div>
-          <div>
-            <label class="label" for="ambColor">Color</label>
-            <input id="ambColor" class="input" type="color" value="#ffffff" />
+        </details>
+
+        <details class="card" data-key="gallery">
+          <summary>Saved poses</summary>
+          <div class="stack">
+            <label class="field"><span class="label">Notes (saved with the pose)</span><textarea id="poseNotes" class="textarea" rows="2" placeholder="e.g. hero pose, low angle"></textarea></label>
+            <button class="btn btn--primary" id="btnSaveGallery" type="button">Save to gallery <kbd>Ctrl S</kbd></button>
+            <div class="grid2"><button class="btn" id="btnSaveFile" type="button">Save file (.json)</button><button class="btn" id="btnOpenFile" type="button">Open files</button></div>
+            <input id="filePose" type="file" accept=".json,application/json" multiple hidden />
+            <div class="tiles" id="poseGallery" aria-label="Saved poses"></div>
+            <div class="grid3"><button class="btn" id="btnRename" type="button">Rename</button><button class="btn" id="btnDeletePose" type="button">Delete</button><button class="btn" id="btnExportGallery" type="button">Export all</button></div>
+            <button class="btn btn--danger" id="btnClearGallery" type="button">Delete all saved poses</button>
           </div>
-        </div>
-
-        <div class="row row--split">
-          <div>
-            <label class="label" for="hemiIntensity">Hemisphere</label>
-            <input id="hemiIntensity" class="input" type="range" min="0" max="2" step="0.01" value="0.35" />
-          </div>
-          <div>
-            <label class="label" for="hemiSky">Sky</label>
-            <input id="hemiSky" class="input" type="color" value="#9bb2ff" />
-          </div>
-        </div>
-
-        <div class="row">
-          <label class="label" for="hemiGround">Ground</label>
-          <input id="hemiGround" class="input" type="color" value="#151a22" />
-        </div>
-
-        <div class="row">
-          <button class="btn" id="btnResetLights" type="button" title="Reset lighting back to preset defaults">
-            Reset Lights
-          </button>
-        </div>
-      </section>
-
-      <!-- Pose / Presets / Gallery / Props sections remain unchanged below -->
-      <!-- (kept exactly as your original, omitted here would be wrong — so kept) -->
-
-      <section class="panel__section">
-        <h2 class="panel__title">Pose</h2>
-
-        <div class="row row--split">
-          <button class="btn" id="btnResetPose" type="button" title="Reset pose (move + rotate + scale)">Reset</button>
-          <button class="btn" id="btnRandomPose" type="button" title="Randomize pose (mild)">Random</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn btn--primary" id="btnSavePose" type="button" title="Download pose.json AND save thumbnail to gallery">
-            Save JSON
-          </button>
-          <button class="btn" id="btnLoadPose" type="button" title="Load pose.json from your computer">Load JSON</button>
-          <input id="filePose" type="file" accept=".json" hidden />
-        </div>
-
-        <div class="row">
-          <button class="btn" id="btnSaveGallery" type="button" title="Save pose to gallery (no download)">
-            Save to Gallery
-          </button>
-        </div>
-
-        <div class="row">
-          <label class="label" for="poseNotes">Notes</label>
-          <textarea id="poseNotes" class="textarea" rows="3" placeholder="Optional: write pose notes..."></textarea>
-        </div>
-      </section>
-
-      <section class="panel__section">
-        <h2 class="panel__title">Preset Poses</h2>
-        <div class="hint">
-          Built-in starter poses. Select one, then apply it. (Joints only — your props won’t be deleted.)
-        </div>
-
-        <div class="row">
-          <div id="presetGallery" class="poseGallery" aria-label="Preset pose list"></div>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnPresetApply" type="button" title="Apply selected preset (joints only)">
-            Apply Preset
-          </button>
-          <button class="btn" id="btnPresetSave" type="button" title="Save selected preset into your Gallery (creates a thumbnail)">
-            Save to Gallery
-          </button>
-        </div>
-      </section>
-
-      <section class="panel__section">
-        <h2 class="panel__title">Pose Gallery</h2>
-
-        <div class="row row--split">
-          <button class="btn" id="btnRenamePose" type="button" title="Rename selected gallery pose">Rename</button>
-          <button class="btn" id="btnDeletePose" type="button" title="Delete selected gallery pose">Delete</button>
-        </div>
-
-        <div class="row">
-          <button class="btn" id="btnClearGallery" type="button" title="Clear all saved gallery poses">
-            Clear Gallery
-          </button>
-        </div>
-
-        <div class="hint">
-          Click a thumbnail to load. Saved locally in your browser (persists after refresh).
-        </div>
-
-        <div id="poseGallery" class="poseGallery" aria-label="Saved pose thumbnails"></div>
-      </section>
-
-      <section class="panel__section">
-        <h2 class="panel__title">Props</h2>
-        <div class="hint">Basic decorations you can pose too.</div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddCube" type="button">Add Cube</button>
-          <button class="btn" id="btnAddSphere" type="button">Add Sphere</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddCylinder" type="button">Add Cylinder</button>
-          <button class="btn" id="btnAddCone" type="button">Add Cone</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddPyramid" type="button">Add Pyramid</button>
-          <button class="btn" id="btnAddTorus" type="button">Add Torus</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddRing" type="button">Add Ring</button>
-          <button class="btn" id="btnAddDisc" type="button">Add Disc</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddIcosa" type="button">Add Icosa</button>
-          <button class="btn" id="btnAddOcta" type="button">Add Octa</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddDodeca" type="button">Add Dodeca</button>
-          <button class="btn" id="btnAddTetra" type="button">Add Tetra</button>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnAddPlane" type="button">Add Plane</button>
-          <span></span>
-        </div>
-
-        <div class="row row--split">
-          <button class="btn" id="btnDelProp" type="button" title="Delete selected prop (if prop)">Delete</button>
-          <button class="btn" id="btnScatter" type="button" title="Scatter a few props">Scatter</button>
-        </div>
-
-        <div class="row">
-          <label class="label" for="bgTone">Background</label>
-          <select id="bgTone" class="select">
-            <option value="midnight" selected>Midnight</option>
-            <option value="studio">Studio</option>
-            <option value="graphite">Graphite</option>
-            <option value="dawn">Dawn</option>
-            <option value="mint">Mint</option>
-            <option value="sunset">Sunset</option>
-            <option value="white">White</option>
-            <option value="black">Black</option>
-          </select>
-        </div>
-      </section>
-
-      <section class="panel__section panel__section--footer">
-        <div class="tiny">
-          Tip: <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd> = Rotate/Move/Orbit/Scale • <kbd>Esc</kbd> clears selection • <kbd>F</kbd> focus • <kbd>Del</kbd> deletes prop • <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>M</kbd> symmetry
-        </div>
-        <div class="tiny tiny--muted">Built for GitHub Pages. No bundler. No nonsense.</div>
-      </section>
+        </details>
+      </div>
     </aside>
 
-    <section class="viewport" aria-label="3D viewport">
-      <canvas id="c" class="canvas" aria-label="3D canvas"></canvas>
-
-      <div id="errorOverlay" class="error hidden" role="alert">
-        <div class="error__title">Render failed</div>
-        <pre id="errorText" class="error__text"></pre>
+    <section class="viewport" id="viewport" aria-label="3D view">
+      <canvas id="c" aria-label="3D posing view"></canvas>
+      <div class="vbar" role="toolbar" aria-label="Tools">
+        <button class="vbtn is-on" data-mode="rotate" type="button" aria-pressed="true" title="Rotate (1)"><svg><use href="#i-rotate"/></svg><span>Rotate</span><kbd>1</kbd></button>
+        <button class="vbtn" data-mode="move" type="button" aria-pressed="false" title="Move (2) — drag a hand or foot and the limb follows"><svg><use href="#i-move"/></svg><span>Move</span><kbd>2</kbd></button>
+        <button class="vbtn" data-mode="view" type="button" aria-pressed="false" title="View only (3) — no gizmo"><svg><use href="#i-eye"/></svg><span>View</span><kbd>3</kbd></button>
+        <button class="vbtn" data-mode="scale" type="button" aria-pressed="false" title="Scale (4)"><svg><use href="#i-scale"/></svg><span>Scale</span><kbd>4</kbd></button>
+        <span class="vsep" aria-hidden="true"></span>
+        <button class="vbtn" id="btnFocusBar" type="button" title="Frame selection (F)"><svg><use href="#i-focus"/></svg><span>Frame</span></button>
       </div>
-
-      <div class="toast" id="toast" aria-live="polite"></div>
+      <p class="vhint" id="vhint">Drag empty space to orbit · right-drag to pan · scroll to zoom</p>
+      <div class="perf" id="perf" hidden></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="dropzone" id="dropzone" hidden>Drop an image (reference), a pose .json or a .glb model</div>
     </section>
   </main>
 
-  <div class="modal hidden" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-    <div class="modal__backdrop" data-close="true"></div>
-    <div class="modal__card">
-      <div class="modal__header">
-        <h3 id="helpTitle" class="modal__title">Help</h3>
-        <button class="iconbtn" id="btnCloseHelp" type="button" aria-label="Close help">✕</button>
+  <dialog id="exportDialog" aria-labelledby="exportTitle">
+    <form method="dialog" class="dialog">
+      <div class="row row--between"><h2 id="exportTitle">Export PNG</h2><button class="iconbtn" value="cancel" aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+      <fieldset class="seg"><legend class="label">Size</legend>
+        <label><input type="radio" name="scale" value="1" /><span>1×</span></label>
+        <label><input type="radio" name="scale" value="2" checked /><span>2×</span></label>
+        <label><input type="radio" name="scale" value="4" /><span>4×</span></label>
+      </fieldset>
+      <p class="hint" id="exportSize"></p>
+      <fieldset class="stack stack--tight"><legend class="label">Include</legend>
+        <label class="toggle"><input type="checkbox" name="transparent" /><span>Transparent background (figure + shadow only)</span></label>
+        <label class="toggle"><input type="checkbox" name="floor" checked /><span>Floor and shadows</span></label>
+        <label class="toggle"><input type="checkbox" name="grid" /><span>Grid</span></label>
+        <label class="toggle"><input type="checkbox" name="reference" /><span>Reference image</span></label>
+      </fieldset>
+      <p class="hint">The gizmo, highlights and light bulbs are never included.</p>
+      <div class="row row--end">
+        <button class="btn" type="button" id="btnCopyPng"><svg><use href="#i-copy"/></svg>Copy</button>
+        <button class="btn btn--primary" type="button" id="btnDownloadPng"><svg><use href="#i-download"/></svg>Download PNG</button>
       </div>
-      <div class="modal__body">
-        <ul class="help">
-          <li><b>Select:</b> click a joint, prop, or imported model in the 3D view.</li>
-          <li><b>Rotate:</b> use the gizmo rings. Toggle axes X/Y/Z. (<kbd>1</kbd>)</li>
-          <li><b>Move:</b> switch to Move to translate the selected joint/prop. (<kbd>2</kbd>)</li>
-          <li><b>Orbit:</b> use Orbit mode to move camera freely. (<kbd>3</kbd>)</li>
-          <li><b>Scale:</b> scale props normally; for body joints it scales the visible mesh only. (<kbd>4</kbd>)</li>
-          <li><b>Symmetry:</b> mirrors body edits L ↔ R (rotate + scale).</li>
-          <li><b>Import 3D:</b> loads a <code>.glb</code>/<code>.gltf</code> into the scene.</li>
-          <li><b>Lighting:</b> adjust intensities/colors/direction and try presets.</li>
-          <li><b>Save JSON:</b> downloads pose.json AND saves a thumbnail in gallery.</li>
-          <li><b>Save to Gallery:</b> saves locally without downloading.</li>
-          <li><b>Export:</b> downloads a PNG of the current view.</li>
-          <li><b>Reference:</b> load an image and pin it to the camera for matching poses.</li>
-        </ul>
-        <div class="help__note">
-          If your screen is blank, hard-refresh (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) and check Console.
-        </div>
-      </div>
-      <div class="modal__footer">
-        <button class="btn btn--primary" id="btnHelpOk" type="button">Got it</button>
-      </div>
+    </form>
+  </dialog>
+
+  <dialog id="helpDialog" aria-labelledby="helpTitle">
+    <div class="dialog">
+      <div class="row row--between"><h2 id="helpTitle">How it works</h2><form method="dialog"><button class="iconbtn" aria-label="Close"><svg><use href="#i-x"/></svg></button></form></div>
+      <ul class="helplist">
+        <li><b>Click</b> a body part, prop or light to select it. <b>Drag empty space</b> to orbit, <b>right-drag</b> to pan, <b>scroll</b> to zoom.</li>
+        <li><b>Rotate</b> turns the selected joint. <b>Move</b> on a hand or foot bends the whole limb (IK); on the body it moves the hips with the feet planted; the ring on the floor moves the whole figure.</li>
+        <li>Add <b>point and spot lights</b> in Lighting, then place them with Move and aim spots with Rotate.</li>
+        <li><b>Export</b> gives a clean PNG (no gizmo) at 1×, 2× or 4×, optionally transparent.</li>
+      </ul>
+      <table class="keys">
+        <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Rotate · Move · View · Scale</td></tr>
+        <tr><td><kbd>Ctrl Z</kbd> / <kbd>Ctrl Shift Z</kbd></td><td>Undo / redo</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Frame the selection</td></tr>
+        <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Select the parent / child joint</td></tr>
+        <tr><td><kbd>Ctrl M</kbd></td><td>Symmetry on/off</td></tr>
+        <tr><td><kbd>Ctrl D</kbd></td><td>Duplicate prop or light</td></tr>
+        <tr><td><kbd>Delete</kbd></td><td>Delete prop, light or model</td></tr>
+        <tr><td><kbd>Ctrl S</kbd> · <kbd>Ctrl E</kbd></td><td>Save to gallery · Export</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Deselect</td></tr>
+      </table>
+      <p class="hint">Your work is kept in this browser between visits. Use “Save file” or “Export all” for a backup.</p>
     </div>
-  </div>
+  </dialog>
+
+  <div class="fatal" id="fatal" hidden><h2>Something went wrong</h2><pre id="fatalText"></pre><p>Try a reload. If it keeps happening, your browser may not support WebGL.</p></div>
 
   <script type="module" src="./app.js"></script>
 </body>

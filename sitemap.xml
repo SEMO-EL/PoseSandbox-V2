@@ -5,14 +5,14 @@
 >
   <!--  PoseSandbox main landing -->
   <url>
-    <loc>https://semo-el.github.io/sandbox-test/</loc>
+    <loc>https://semo-el.github.io/PoseSandbox/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
 
   <!-- PoseSandbox app -->
   <url>
-    <loc>https://semo-el.github.io/sandbox-test/app.html</loc>
+    <loc>https://semo-el.github.io/PoseSandbox/app.html</loc>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
