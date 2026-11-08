@@ -10,6 +10,8 @@ the figure's own stance is its rest pose, joint offsets are the measured world d
 import sys, json, numpy as np, scipy.sparse as sp
 import meshio
 from glbwrite import write_glb
+from scipy.spatial import cKDTree
+from scipy.sparse.csgraph import connected_components
 
 P, I, SCALE = meshio.load()
 N = len(P)
@@ -180,26 +182,9 @@ def armpit_zone(side, k):
     return (P[:, 1] < c[1] - 0.3 * r) & (P[:, 1] > c[1] - 0.2) & (k * P[:, 0] < k * c[0] + 0.03) & (k * P[:, 0] > k * c[0] - 0.12)         & (np.abs(P[:, 2] - c[2]) < 2.2 * r)
 
 
-def pad_follow(W, lab):
-    """The chest's shoulder pad covers the ball. Let its outer part follow the arm (up to 45% at the tip, nothing at
-    the neck side), like a deltoid: a raised arm lifts the pad instead of punching through it."""
-    ci = LABELS.index("chest")
-    for side, k in (("l", -1), ("r", 1)):
-        c, r = BALL[side]
-        ai = LABELS.index(f"{side}_shoulder")
-        lat = k * P[:, 0]                                    # distance out from the midline on this side
-        def sm(e0, e1, x): t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
-        f = 0.45 * sm(k * c[0] - 0.085, k * c[0] + 0.01, lat)             * sm(c[1] - r * 0.9, c[1] - r * 0.1, P[:, 1])             * (1 - sm(r * 1.5, r * 2.2, np.abs(P[:, 2] - c[2])))
-        # the chest wall under the arm (armpit): up to 30% just below the ball, fading 12 cm down the side,
-        # so a raised arm stretches the armpit smoothly instead of pulling a thin web
-        pit = 0.3 * sm(k * c[0] - 0.11, k * c[0] - 0.02, lat)             * (1 - sm(c[1] - r * 0.9 - 0.12, c[1] - r * 0.9, P[:, 1]) * 0 - 0)             * sm(c[1] - r * 0.9 - 0.12, c[1] - r * 0.9, P[:, 1]) * (1 - sm(c[1] - r * 0.6, c[1] - r * 0.1, P[:, 1]))             * (1 - sm(r * 1.2, r * 1.9, np.abs(P[:, 2] - c[2])))
-        f = np.maximum(f, pit)
-        v = np.where((lab == ci) & (f > 1e-3))[0]
-        move = W[v, ci] * f[v]
-        W[v, ci] -= move
-        W[v, ai] += move
-        print(f"{side} pad follow: {len(v)} chest vertices, max share {f[v].max():.2f}")
-    return W
+def sm(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
 
 
 def mirror_toes():
@@ -245,7 +230,7 @@ def weights(lab, A, E):
     deg = np.asarray(A.sum(1)).ravel()
     pairs = [(c, PARENT.get(c)) for c in LABELS] + [("l_thumb2", "l_wrist"), ("r_thumb2", "r_wrist"), ("head", "chest")]
     for child, par in pairs:
-        if par not in CAPS: continue
+        if par not in CAPS or child.endswith("_shoulder"): continue  # shoulders are cut, not blended (split_shoulders)
         ci, pi = LABELS.index(child), LABELS.index(par)
         both = (lab == ci) | (lab == pi)
         seam = np.zeros(N, bool)
@@ -255,11 +240,6 @@ def weights(lab, A, E):
         band = seam.copy()
         for _ in range(band_hops(child)):
             band = (band | (A @ band.astype(float) > 0)) & both
-        if child.endswith("_shoulder") and BALL:  # armpit: widen to ~7 rings on both sides of the seam
-            wide = seam.copy()
-            for _ in range(7):
-                wide = (wide | (A @ wide.astype(float) > 0)) & both
-            band |= wide & armpit_zone(child[0], -1 if child[0] == "l" else 1)
         s = (lab == ci).astype(float)
         fixed = ~band
         for _ in range(60):
@@ -269,7 +249,7 @@ def weights(lab, A, E):
         tot = W[v, ci] + W[v, pi]
         W[v, ci] = tot * s[v]
         W[v, pi] = tot * (1 - s[v])
-    return pad_follow(W, lab)
+    return W
 
 
 COLORS = np.array([[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48], [145, 30, 180], [70, 240, 240],
@@ -365,10 +345,219 @@ def defuzz(lab, A, E, rings=3, iters=20):
     return Q
 
 
+def arm_labels(side):
+    return [i for i, n in enumerate(LABELS) if n.startswith(side + "_") and n.split("_")[1].rstrip("12") not in ("hip", "knee", "ankle", "toes")]
+
+
+def ballify(P, faces, side, arm):
+    """Reshape the top of a cut-free upper arm (the open piece `faces`, vertices `arm`) into a clean ball that flows
+    into the arm's tube (a smooth union of the fitted sphere and a capsule down the arm), with even vertex spacing:
+    the sculpt's armpit crease is otherwise a lip of thin triangles that shows once the arm is raised. The open rim
+    is smoothed along itself and projected too, so the cap built on it afterwards continues the same sphere."""
+    P = P.copy()
+    Ed = np.unique(np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), 1), axis=0)
+    A = sp.coo_matrix((np.ones(len(Ed)), (Ed[:, 0], Ed[:, 1])), shape=(len(P), len(P))); A = (A + A.T).tocsr()
+    deg = np.maximum(np.asarray(A.sum(1)).ravel(), 1)
+    lp = np.array(boundary_loops(faces)[0])            # the open shoulder rim (one loop: split_shoulders checks)
+    rim = np.zeros(len(P), bool); rim[lp] = True
+    c, r = BALL[side]
+    e = V(f"{side}_elbow"); Lh = np.linalg.norm(e - c)
+    t0 = ((P - c) @ ((e - c) / Lh)) / Lh
+    ah = P[arm & (t0 > 0.35) & (t0 < 0.45)].mean(0) - c      # axis through the arm's own cross-section centre
+    ah /= np.linalg.norm(ah)
+    t = ((P - c) @ ah) / Lh
+    rad = np.linalg.norm(P - c - np.clip(t, 0, 1)[:, None] * Lh * ah, axis=1)
+    ra = float(np.median(rad[arm & (t > 0.3) & (t < 0.45)]))
+    k = 0.35 * r
+
+    def sdf(X):
+        ds = np.linalg.norm(X - c, axis=1) - r
+        tt = np.clip(((X - c) @ ah) / Lh, 0, 1)
+        dc = np.linalg.norm(X - c - tt[:, None] * Lh * ah, axis=1) - ra
+        h = np.clip(0.5 + 0.5 * (dc - ds) / k, 0, 1)
+        return dc * (1 - h) + ds * h - k * h * (1 - h)
+
+    def project(X):
+        for _ in range(2):
+            d = sdf(X); g = np.zeros_like(X)
+            for ax in range(3):
+                dx = np.zeros(3); dx[ax] = 1e-4
+                g[:, ax] = (sdf(X + dx) - sdf(X - dx)) / 2e-4
+            X = X - (d / np.maximum((g * g).sum(1), 1e-9))[:, None] * g
+        return X
+
+    w = np.where(rim, 1, 1 - sm(0.15, 0.4, t))        # the rim goes all the way: the cap is built on it
+    reg = arm & (w > 0)
+    Q = P.copy(); X = Q[reg]
+    rel = reg & ~rim
+    for it in range(15):
+        avg = (A @ Q) / deg[:, None]
+        Q[rel] += 0.5 * (avg[rel] - Q[rel])            # even out the spacing (the rim: along itself)...
+        Q[lp] = 0.5 * Q[lp] + 0.25 * (np.roll(Q[lp], 1, 0) + np.roll(Q[lp], -1, 0))
+        Q[reg] = project(Q[reg])                       # ...and put it back on the surface
+    move = w[reg, None] * (Q[reg] - P[reg])
+    P[reg] += move
+    mm = np.linalg.norm(move, axis=1) * 1000
+    print(f"{side} ball: tube radius {ra * 100:.1f} cm (ball {r * 100:.1f} cm), {reg.sum()} vertices reshaped, moved median {np.median(mm):.1f} mm, max {mm.max():.1f} mm")
+    return P, project, lambda X: 1 - sm(0.15, 0.4, ((X - c) @ ah) / Lh)
+
+
+def split_shoulders(P, I, W, lab):
+    """Cut each arm free at the shoulder like an art mannequin's ball joint. The cut runs along a smooth curve (the
+    0.5 line of a smoothed arm/body field, splitting triangles), not along jagged mesh edges. The arm's opening is
+    closed with a spherical cap on the fitted ball, the body's with a concave spherical socket just inside it.
+    Nothing can stretch across a shoulder, and whatever a turning ball uncovers is ball or socket."""
+    ci = LABELS.index("chest")
+    onehot = lambda li: np.eye(len(LABELS))[li]
+    seen = None
+    for side in "lr":
+        ai = LABELS.index(f"{side}_shoulder")
+        c, r = BALL[side]
+        n = len(P)
+        Ed = np.unique(np.sort(np.concatenate([I[:, [0, 1]], I[:, [1, 2]], I[:, [2, 0]]]), 1), axis=0)
+        A = sp.coo_matrix((np.ones(len(Ed)), (Ed[:, 0], Ed[:, 1])), shape=(n, n)); A = (A + A.T).tocsr()
+        deg = np.asarray(A.sum(1)).ravel()
+        arm = np.isin(lab, arm_labels(side))
+        f = arm.astype(float)
+        free = (arm & (A @ (~arm).astype(float) > 0)) | (~arm & (A @ arm.astype(float) > 0))
+        for _ in range(3): free |= A @ free.astype(float) > 0
+        free &= np.linalg.norm(P - c, axis=1) < 2.5 * r
+        for _ in range(60): f[free] = (A @ f)[free] / deg[free]
+        zone = np.linalg.norm(P - c, axis=1) < 2.5 * r
+        if seen is None:                                 # the l seam came out cleaner: keep it, and mirror it onto r
+            seen = (cKDTree((P[zone] - c) * [-1, 1, 1]), f[zone])
+        else:
+            dd, ii = seen[0].query(P[zone] - c, k=4)
+            wgt = 1 / np.maximum(dd, 1e-6)
+            f[zone] = (seen[1][ii] * wgt).sum(1) / wgt.sum(1)
+            for _ in range(20): f[zone] = (A @ f)[zone] / deg[zone]
+        on_arm = f >= 0.5
+        fn_ = np.cross(P[I[:, 1]] - P[I[:, 0]], P[I[:, 2]] - P[I[:, 0]]); nrm = np.zeros_like(P)
+        for k_ in range(3): np.add.at(nrm, I[:, k_], fn_)
+        on_arm &= ~(zone & ((nrm * (P - c)).sum(1) < 0))  # surface facing the ball (the pad's underside) stays body
+        for want in (True, False):                       # no islands: one arm region, one body region
+            sub = np.where(on_arm == want)[0]
+            _, comp = connected_components(A[sub][:, sub], directed=False)
+            flip = sub[(comp != np.bincount(comp).argmax()) & zone[sub]]  # only near the ball: separate shells elsewhere stay
+            on_arm[flip] = not want
+        S = on_arm[I]; cnt = S.sum(1)
+        newP, newW, newL, edge, fa, fb = [], [], [], {}, [], []
+
+        def cut(u, v):                                   # (arm copy, body copy) of the point where f = 0.5 on edge u-v
+            key = (min(u, v), max(u, v))
+            if key not in edge:
+                t = np.clip((0.5 - f[u]) / (f[v] - f[u]), 0.05, 0.95)
+                x = P[u] + t * (P[v] - P[u])
+                edge[key] = (n + len(newP), n + len(newP) + 1)
+                newP.extend([x, x]); newW.extend([onehot(ai), onehot(ci)]); newL.extend([ai, ci])
+            return edge[key]
+
+        for tri, sd in zip(I[(cnt == 1) | (cnt == 2)], S[(cnt == 1) | (cnt == 2)]):
+            lone = next(k for k in range(3) if sd[k] != sd[(k + 1) % 3] and sd[k] != sd[(k + 2) % 3])
+            x, y, z = tri[lone], tri[(lone + 1) % 3], tri[(lone + 2) % 3]
+            xy, xz = cut(x, y), cut(x, z)
+            k1 = 0 if sd[lone] else 1; k2 = 1 - k1
+            one = [(x, xy[k1], xz[k1])]
+            two = [(xy[k2], y, z), (xy[k2], z, xz[k2])]
+            (fa if sd[lone] else fb).extend(one); (fb if sd[lone] else fa).extend(two)
+        P = np.vstack([P, newP]); W = np.vstack([W, newW]); lab = np.concatenate([lab, newL])
+        for v in np.where(on_arm & ~arm)[0]:             # vertices the smooth cut moved across
+            W[v] = onehot(ai); lab[v] = ai
+        for v in np.where(~on_arm & arm)[0]:
+            W[v] = onehot(ci); lab[v] = ci
+        I_arm = np.vstack([I[cnt == 3], np.array(fa, int).reshape(-1, 3)])
+        I_body = np.vstack([I[cnt == 0], np.array(fb, int).reshape(-1, 3)])
+        P, onto_ball, ball_w = ballify(P, I_arm, side, np.isin(np.arange(len(P)), I_arm))
+        parts = []
+        for faces, rad, li, rings in ((I_arm, r, ai, 6), (I_body, 0.96 * r, ci, 4)):
+            loops = boundary_loops(faces)
+            assert len(loops) == 1, f"{side}: an opening should be one loop, got {[len(l) for l in loops]}"
+            loop = loops[0]; m = len(loop)
+            if li == ci:                                 # tuck the socket's lip onto the ball, fading over 8 rings
+                K = 8
+                Eb = np.unique(np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), 1), axis=0)
+                Ab = sp.coo_matrix((np.ones(len(Eb)), (Eb[:, 0], Eb[:, 1])), shape=(len(P), len(P))); Ab = (Ab + Ab.T).tocsr()
+                hop = np.full(len(P), 99); hop[loop] = 0; front = hop == 0
+                for h_ in range(1, K):
+                    front = (Ab @ front.astype(float) > 0) & (hop == 99); hop[front] = h_
+                near = np.where(hop < K)[0]
+                lp = np.array(loop); q = P[lp].copy()
+                for _ in range(30):                          # the lip's target: on the sphere, smoothed along itself
+                    q = 0.5 * q + 0.25 * (np.roll(q, 1, 0) + np.roll(q, -1, 0))
+                    q = c + 1.008 * r * (q - c) / np.linalg.norm(q - c, axis=1, keepdims=True)
+                D = np.zeros_like(P); D[lp] = q - P[lp]
+                inner = near[hop[near] > 0]; degb = np.asarray(Ab.sum(1)).ravel()[inner]
+                for _ in range(150):                         # spread the lip's move smoothly into the rings behind it
+                    D[inner] = (Ab @ D)[inner] / degb[:, None]
+                P[near] += D[near]
+                for lam in [0.5, -0.53] * 30:                # Taubin relax of the tucked zone (lip held): no folds, no shrink
+                    P[inner] += lam * ((Ab @ P)[inner] / degb[:, None] - P[inner])
+            d = P[loop] - c; d /= np.linalg.norm(d, axis=1, keepdims=True)
+            u = d.mean(0); u /= np.linalg.norm(u)
+            ring_ix = [np.array(loop)]; extra = []
+            ds = d.copy()
+            for j in range(1, rings):                    # rings on the sphere, from the rim's directions toward u,
+                for _ in range(400):                     # each rounder than the last (a crescent rim's own average
+                    ds = 0.5 * ds + 0.25 * (np.roll(ds, 1, 0) + np.roll(ds, -1, 0))  # can lie outside it)
+                    ds /= np.linalg.norm(ds, axis=1, keepdims=True)
+                u = ds.mean(0); u /= np.linalg.norm(u)  # and closing on its own centre: no ring folds over
+                q = (1 - j / rings) * ds + (j / rings) * u
+                q = c + rad * q / np.linalg.norm(q, axis=1, keepdims=True)
+                ring_ix.append(len(P) + len(extra) + np.arange(m)); extra.extend(q)
+            apex = len(P) + len(extra); extra.append(c + rad * u)
+            if li == ai: extra = onto_ball(np.array(extra))  # the cap lies on the same ball-and-tube surface as the arm
+            P = np.vstack([P, extra]); W = np.vstack([W, np.tile(onehot(li), (len(extra), 1))]); lab = np.concatenate([lab, np.full(len(extra), li)])
+            tris = []
+            for O, In in zip(ring_ix[:-1], ring_ix[1:]):  # the boundary runs O[k] -> O[k+1], so the cap walks it backwards
+                for k in range(m):
+                    k1 = (k + 1) % m
+                    tris += [(O[k1], O[k], In[k]), (O[k1], In[k], In[k1])]
+            last = ring_ix[-1]
+            tris += [(last[(k + 1) % m], last[k], apex) for k in range(m)]
+            parts.append(np.array(tris))
+            if li == ai:                                 # one last pass over the whole ball, cap and arm together,
+                Fa = np.vstack([I_arm, parts[0]])        # so they meet without a crease (the cap's centre stays put)
+                Ea = np.unique(np.sort(np.concatenate([Fa[:, [0, 1]], Fa[:, [1, 2]], Fa[:, [2, 0]]]), 1), axis=0)
+                Aa = sp.coo_matrix((np.ones(len(Ea)), (Ea[:, 0], Ea[:, 1])), shape=(len(P), len(P))); Aa = (Aa + Aa.T).tocsr()
+                ball = np.zeros(len(P), bool); ball[np.unique(Fa)] = True
+                ball &= np.linalg.norm(P - c, axis=1) < 1.6 * r
+                wb = np.zeros(len(P)); wb[ball] = ball_w(P[ball]); wb[np.concatenate(ring_ix)] = 1; wb[apex] = 1
+                rel = ball & (wb > 0.999); rel[ring_ix[-1]] = False; rel[apex] = False
+                dega = np.maximum(np.asarray(Aa.sum(1)).ravel(), 1)[rel]
+                for _ in range(10):                      # (fading out down the arm exactly as the first reshape did)
+                    P[rel] += 0.5 * ((Aa @ P)[rel] / dega[:, None] - P[rel])
+                    P[ball] += wb[ball, None] * (onto_ball(P[ball]) - P[ball])
+        I = np.vstack([I_arm, parts[0], I_body, parts[1]])
+        print(f"{side} shoulder cut: {len(edge)} edges split along the seam, rim {len(boundary_loops(I_arm)[0])} points")
+    # the result must be closed and manifold: every edge in exactly two triangles
+    E2 = np.sort(np.concatenate([I[:, [0, 1]], I[:, [1, 2]], I[:, [2, 0]]]), 1)
+    _, cnt = np.unique(E2, axis=0, return_counts=True)
+    assert (cnt == 2).all(), f"open or non-manifold edges after the cut: {(cnt != 2).sum()}"
+    print(f"cut mesh closed: {len(P)} vertices, {len(I)} triangles, every edge shared by exactly 2 triangles")
+    return P, I, W, lab
+
+
+def boundary_loops(faces):
+    """Ordered loops of edges used by one triangle only, each in the owning triangle's winding direction."""
+    directed = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    key = np.sort(directed, 1)
+    _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    nxt = {int(a): int(b) for (a, b), c in zip(directed, cnt[inv]) if c == 1}
+    loops, seen = [], set()
+    for start in list(nxt):
+        if start in seen: continue
+        loop, v = [], start
+        while v not in seen:
+            seen.add(v); loop.append(v); v = nxt[v]
+        loops.append(loop)
+    return loops
+
+
 def bake(lab, A, E):
     global P
     P = defuzz(lab, A, E)
     W = weights(lab, A, E)
+    P, I_cut, W, lab_cut = split_shoulders(P, I, W, lab)
     top = np.argsort(-W, 1)[:, :4]
     tw = np.take_along_axis(W, top, 1)
     tw /= tw.sum(1, keepdims=True)
@@ -383,9 +572,10 @@ def bake(lab, A, E):
             parents[f"{side}_{f}1"] = f"{side}_wrist"; parents[f"{side}_{f}2"] = f"{side}_{f}1"
     extras = {"order": ORDER, "parents": parents, "joints": {n: [round(float(v), 5) for v in J[n]] for n in ORDER},
               "fingerBlock": True, "source": "Meshy AI 'Blank Mannequin' (1108175649), rigged by tools/rig.py"}
-    write_glb("../assets/models/mannequin.glb", P, I, joints=joints, weights=q, extras=extras)
+    write_glb("../assets/models/mannequin.glb", P, I_cut, joints=joints, weights=q, extras=extras)
     blended = (q.max(1) < 255).sum()
-    print(f"baked {N} vertices, {len(I)} triangles; blended vertices {blended} ({blended / N:.1%}); max influences {(q > 0).sum(1).max()}")
+    N_ = len(P)
+    print(f"baked {len(P)} vertices, {len(I_cut)} triangles; blended vertices {blended} ({blended / N_:.1%}); max influences {(q > 0).sum(1).max()}")
 
 
 if __name__ == "__main__":
