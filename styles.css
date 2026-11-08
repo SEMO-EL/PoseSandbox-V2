@@ -7,7 +7,7 @@
   --line2: rgba(255, 255, 255, 0.16);
   --text: rgba(255, 255, 255, 0.92);
   --muted: rgba(255, 255, 255, 0.66);
-  --faint: rgba(255, 255, 255, 0.46);
+  --faint: rgba(255, 255, 255, 0.6);
   --accent: #7c5cff;
   --accent2: #24d2ff;
   --danger: #ff6b86;
@@ -131,7 +131,7 @@ input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px sol
 dialog { border: 1px solid var(--line2); border-radius: 14px; background: #111a2b; color: var(--text); padding: 0; width: min(440px, calc(100vw - 24px)); box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
 dialog::backdrop { background: rgba(4,6,12,0.6); backdrop-filter: blur(2px); }
 .dialog { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.dialog h2 { margin: 0; font-size: 16px; }
+.dialog h2 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
 fieldset { border: 0; padding: 0; margin: 0; }
 .seg { display: flex; gap: 6px; align-items: center; }
 .seg legend { margin-bottom: 6px; }
