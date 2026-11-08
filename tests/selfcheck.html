@@ -6,7 +6,7 @@
 <body><h1>PoseSandbox self-check</h1><ol id="out"></ol>
 <script type="module">
 import * as THREE from "three";
-import { Mannequin, CHAINS } from "../character/character.js";
+import { Mannequin, CHAINS, loadSculpt } from "../character/character.js";
 import { createWorld, createProp } from "../core/world.js";
 import { createHistory } from "../core/history.js";
 import { isTypingTarget } from "../core/helpers.js";
@@ -104,6 +104,37 @@ const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
     if (Math.abs(box.min.y - want) > 1e-3) bad.push(`${p.id} ${box.min.y.toFixed(3)}`);
   }
   check("every preset stands on the floor", !bad.length, bad.join(", "));
+}
+
+// 8 · the sculpted rig: bound exactly at rest, weights sum to 1, poses stay on the floor, IK still reaches
+{
+  await loadSculpt("../assets/models/mannequin.glb");
+  const scene = new THREE.Scene();
+  const fig = new Mannequin(scene).create("sculpted");
+  const mesh = fig.skinned, pos = mesh.geometry.attributes.position, sw = mesh.geometry.attributes.skinWeight;
+  fig.root.updateMatrixWorld(true);
+  let worst = 0, sumOff = 0;
+  const v = new THREE.Vector3(), r = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 37) {
+    mesh.getVertexPosition(i, v);
+    worst = Math.max(worst, v.distanceTo(r.fromBufferAttribute(pos, i)));
+    sumOff = Math.max(sumOff, Math.abs(sw.getX(i) + sw.getY(i) + sw.getZ(i) + sw.getW(i) - 1));
+  }
+  check("sculpted: skin sits exactly on the sculpt at rest", worst < 1e-5, `max offset ${worst.toExponential(1)} m`);
+  check("sculpted: every vertex's weights sum to 1", sumOff < 1e-3, `max error ${sumOff.toFixed(4)}`);
+  const bad = [];
+  for (const p of PRESETS) {
+    applyPreset(fig, p);
+    fig.root.updateMatrixWorld(true);
+    const box = new THREE.Box3().expandByObject(mesh, true);
+    if (Math.abs(box.min.y - (p.lift || 0)) > 2e-3) bad.push(`${p.id} ${box.min.y.toFixed(3)}`);
+  }
+  check("sculpted: every preset stands on the floor", !bad.length, bad.join(", "));
+  fig.resetPose();
+  const [a, b, c] = CHAINS.r_leg.map((n) => fig.joint(n));
+  const target = c.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0.2));
+  solveTwoBone(a, b, c, target, new THREE.Vector3(0, 0, 1));
+  check("sculpted: leg IK reaches its target", c.getWorldPosition(new THREE.Vector3()).distanceTo(target) < 1e-3);
 }
 
 const out = document.getElementById("out");

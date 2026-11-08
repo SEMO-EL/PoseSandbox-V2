@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Mannequin, BUILDS, SKINS, CHAINS, chainOf, jointLabel, counterpartName } from "./character/character.js";
+import { Mannequin, BUILDS, SKINS, CHAINS, chainOf, jointLabel, counterpartName, loadSculpt } from "./character/character.js";
 import { createRenderer } from "./engine/renderer.js";
 import { createScene, BACKGROUNDS, fovFromLens } from "./engine/scene.js";
 import { createLoop } from "./engine/loop.js";
@@ -24,9 +24,12 @@ const toast = makeToast($("toast"));
 const SESSION_KEY = "posesandbox_session_v2";
 const PROP_BUTTONS = ["cube", "sphere", "cylinder", "cone", "pyramid", "torus", "block", "step", "pole", "wall", "icosa", "plane"];
 
-try {
-  boot();
-} catch (err) {
+// the sculpted figure loads first; without it the procedural mannequin is used
+loadSculpt().catch((e) => console.warn("Sculpted mannequin unavailable, using the classic one", e)).then(() => {
+  try { boot(); } catch (err) { showFatal(err); }
+});
+
+function showFatal(err) {
   $("fatalText").textContent = String(err?.stack || err);
   $("fatal").hidden = false;
   console.error(err);
@@ -39,7 +42,7 @@ function boot() {
   const { scene, camera, orbit, gizmo, floor } = S;
   const loop = createLoop({ renderer, scene, camera, orbit });
   const invalidate = loop.invalidate;
-  const figure = new Mannequin(scene).create("neutral");
+  const figure = new Mannequin(scene).create(Mannequin.sculpt ? "sculpted" : "neutral");
   const world = createWorld(scene);
   const reference = createReference(camera);
   const ikHandle = new THREE.Object3D();
@@ -142,10 +145,13 @@ function boot() {
     camera, canvas, gizmo,
     getRoots: () => [figure.root, ...world.live()],
     onChange: () => { updateInspector(); renderLightList(); attachGizmo(); },
-    onHoverChange: (t) => { $("vhint").textContent = t ? labelOf(t) : modeHint; invalidate(); }
+    onHoverChange: (t) => { $("vhint").textContent = t ? labelOf(t) : modeHint; invalidate(); },
+    resolveHit: (hit) => figure.jointForHit(hit),
+    paintJoints: (sel, hov) => figure.paintJoints(sel, hov)
   });
 
-  const labelOf = (o) => (o.userData.isJoint ? jointLabel(o.name) : o.name);
+  const fingerName = (n) => (figure.fingerBlock ? n.replace("index finger", "fingers") : n); // one fused finger block on the sculpt
+  const labelOf = (o) => (o.userData.isJoint ? fingerName(jointLabel(o.name)) : o.name);
 
   function setHint(text) {
     modeHint = text;
@@ -248,7 +254,8 @@ function boot() {
     const groups = [["Body", ["char_root", "hips", "spine", "chest", "neck", "head"]]];
     for (const [side, label] of [["l", "Right"], ["r", "Left"]]) {
       groups.push([`${label} arm`, ["shoulder", "elbow", "wrist"].map((p) => `${side}_${p}`)]);
-      groups.push([`${label} fingers`, ["thumb1", "thumb2", "index1", "index2", "middle1", "middle2", "ring1", "ring2", "pinky1", "pinky2"].map((p) => `${side}_${p}`)]);
+      const fingers = figure.fingerBlock ? ["thumb1", "thumb2", "index1", "index2"] : ["thumb1", "thumb2", "index1", "index2", "middle1", "middle2", "ring1", "ring2", "pinky1", "pinky2"];
+      groups.push([`${label} hand`, fingers.map((p) => `${side}_${p}`)]);
       groups.push([`${label} leg`, ["hip", "knee", "ankle", "toes"].map((p) => `${side}_${p}`)]);
     }
     const sel = $("jointSelect");
@@ -256,7 +263,7 @@ function boot() {
     for (const [label, names] of groups) {
       const g = document.createElement("optgroup");
       g.label = label;
-      for (const n of names) g.append(new Option(jointLabel(n), n));
+      for (const n of names) g.append(new Option(fingerName(jointLabel(n)), n));
       sel.append(g);
     }
   }
@@ -279,7 +286,7 @@ function boot() {
   function boxOf(obj) {
     const box = new THREE.Box3();
     obj.updateWorldMatrix(true, true);
-    obj.traverseVisible((o) => { if (o.isMesh && !o.userData.helper) box.expandByObject(o); });
+    obj.traverseVisible((o) => { if (o.isMesh && !o.userData.helper) box.expandByObject(o, !!o.isSkinnedMesh); }); // skinned: measure the posed skin
     return box;
   }
 
@@ -658,6 +665,8 @@ function boot() {
   function syncFigureUI() {
     $("figBuild").value = figure.build;
     $("figSkin").value = figure.skin;
+    fillJointSelect();
+    fillHandSelects();
   }
 
   function syncLensUI() {
@@ -680,10 +689,17 @@ function boot() {
   /* ------------------------------------------------------------ build the panel */
 
   fillJointSelect();
-  for (const [k, v] of Object.entries(BUILDS)) $("figBuild").append(new Option(v.label, k));
+  for (const [k, v] of Object.entries(BUILDS)) if (!v.sculpted || Mannequin.sculpt) $("figBuild").append(new Option(v.label, k));
   for (const [k, v] of Object.entries(SKINS)) $("figSkin").append(new Option(v.label, k));
   for (const [k, v] of Object.entries(BACKGROUNDS)) $("bgTone").append(new Option(v.label, k));
-  for (const sel of [$("handR"), $("handL")]) for (const [k, v] of Object.entries(HAND_POSES)) sel.append(new Option(v.label, k));
+  function fillHandSelects() { // a fused finger block can't point or make a V
+    for (const sel of [$("handR"), $("handL")]) {
+      const keep = sel.value;
+      sel.replaceChildren(...Object.entries(HAND_POSES).filter(([k]) => !figure.fingerBlock || !["point", "peace"].includes(k)).map(([k, v]) => new Option(v.label, k)));
+      sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "relaxed";
+    }
+  }
+  fillHandSelects();
   for (const t of PROP_BUTTONS) {
     const b = document.createElement("button");
     b.type = "button";
@@ -757,6 +773,7 @@ function boot() {
     selection.selected = null;
     selection.set(name ? figure.joint(name) : selection.get());
     selection.repaint();
+    syncFigureUI();
     attachGizmo();
     commit();
   });

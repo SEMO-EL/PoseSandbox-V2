@@ -8,7 +8,9 @@ const ACCENT = new THREE.Color(0x7c5cff);
 const LEVEL = { hover: 0.16, selected: 0.42 };
 
 export class Selection {
-  constructor({ camera, canvas, gizmo, getRoots, onChange, onHoverChange }) {
+  constructor({ camera, canvas, gizmo, getRoots, onChange, onHoverChange, resolveHit, paintJoints }) {
+    this.resolveHit = resolveHit;   // skinned figure: hit -> joint
+    this.paintJoints = paintJoints; // skinned figure: its shader draws the glow
     this.camera = camera;
     this.canvas = canvas;
     this.gizmo = gizmo;
@@ -61,7 +63,7 @@ export class Selection {
       root.traverseVisible((o) => { if (o.isMesh && o.userData.pickable) meshes.push(o); });
     }
     const hit = this.ray.intersectObjects(meshes, false)[0];
-    return hit ? this.resolve(hit.object) : null;
+    return hit ? this.resolveHit?.(hit) || this.resolve(hit.object) : null;
   }
 
   set(target) {
@@ -96,12 +98,15 @@ export class Selection {
     for (const [m] of this._painted) if (!want.has(m)) paint(m, 0);
     for (const [m, lvl] of want) paint(m, lvl);
     this._painted = want;
+    const j = (x) => (this.enabled && x?.userData.isJoint ? x : null);
+    this.paintJoints?.(j(this.selected), j(this.hovered));
   }
 
   /** Run fn with every highlight removed (exports, thumbnails). */
   withoutHighlights(fn) {
     for (const [m] of this._painted) paint(m, 0);
-    try { return fn(); } finally { for (const [m, lvl] of this._painted) paint(m, lvl); }
+    this.paintJoints?.(null, null);
+    try { return fn(); } finally { this.repaint(); }
   }
 }
 

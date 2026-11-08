@@ -5,7 +5,7 @@
 <body><canvas id="c"></canvas>
 <script type="module">
 import * as THREE from "three";
-import { Mannequin } from "../character/character.js";
+import { Mannequin, loadSculpt } from "../character/character.js";
 const q = new URLSearchParams(location.search);
 const canvas = document.getElementById("c");
 const r = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -17,7 +17,9 @@ scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x20242c, 0.9));
 const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(2.5, 4, 2); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
 Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 }); scene.add(key);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x161c2a })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
-const m = new Mannequin(scene).create(q.get("build") || "neutral");
+const build = q.get("build") || "sculpted";
+if (build === "sculpted") await loadSculpt(q.get("src") || "../assets/models/mannequin.glb");
+const m = new Mannequin(scene).create(build);
 if (q.get("skin")) m.setSkin(q.get("skin"));
 if (q.get("pose") === "t") { m.joint("l_shoulder").rotation.z = -Math.PI / 2; m.joint("r_shoulder").rotation.z = Math.PI / 2; }
 if (q.get("preset")) { const { PRESETS, applyPreset } = await import("../poses/presets.js"); applyPreset(m, PRESETS.find((p) => p.id === q.get("preset"))); }

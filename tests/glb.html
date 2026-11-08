@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- dev viewer for a raw GLB: ?src=..&view=x,y,z&ty=..&fov=..&joints=1 (draws the fitted joints from tools/joints.json) -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#0b0f17}canvas{display:block;width:100%;height:100%}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script></head>
+<body><canvas id="c"></canvas><script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true });
+r.setSize(innerWidth, innerHeight, false); r.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f17);
+const cam = new THREE.PerspectiveCamera(Number(q.get("fov") || 30), innerWidth / innerHeight, 0.01, 50);
+cam.position.set(...(q.get("view") || "0,0.9,4.2").split(",").map(Number)); cam.lookAt(...(q.get("at") || "0,0.9,0").split(",").map(Number));
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x303540, 1.4));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(2, 3, 4); scene.add(key);
+const g = await new GLTFLoader().loadAsync(q.get("src") || "../tools/mannequin-source.glb");
+g.scene.traverse((o) => { if (o.isMesh) { o.geometry.computeVertexNormals(); o.material = new THREE.MeshStandardMaterial({ vertexColors: !!o.geometry.attributes.color, color: o.geometry.attributes.color ? 0xffffff : 0xd8d2c8, roughness: 0.6, transparent: q.has("xray"), opacity: q.has("xray") ? 0.35 : 1 }); } });
+// same normalisation as tools/meshio.py: 1.80 m tall, feet on y = 0, centred in x/z
+const box = new THREE.Box3().setFromObject(g.scene), k = 1.8 / (box.max.y - box.min.y);
+g.scene.scale.setScalar(k);
+g.scene.position.set(-(box.max.x + box.min.x) / 2 * k, -box.min.y * k, -(box.max.z + box.min.z) / 2 * k);
+if (q.has("raw")) { g.scene.scale.setScalar(1); g.scene.position.set(0, 0, 0); }
+scene.add(g.scene);
+if (q.has("joints")) {
+  const J = await (await fetch("../tools/joints.json?" + Math.random())).json();
+  for (const [n, p] of Object.entries(J)) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: n.startsWith("l_") ? 0xff4466 : n.startsWith("r_") ? 0x44ddff : 0xffdd44, depthTest: false }));
+    m.position.fromArray(p); m.renderOrder = 10; scene.add(m);
+  }
+}
+r.render(scene, cam); window.done = true;
+</script></body></html>

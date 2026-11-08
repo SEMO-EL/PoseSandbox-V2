@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export const BUILDS = {
+  sculpted:  { label: "Sculpted", sculpted: true }, // assets/models/mannequin.glb, rigged by tools/rig.py
   neutral:   { label: "Neutral",   sh: 0.18,  chest: [0.155, 0.16, 0.105], waist: [0.118, 0.09, 0.085], pelvis: [0.15, 0.1, 0.1],     hipX: 0.088, limb: 1 },
   feminine:  { label: "Feminine",  sh: 0.165, chest: [0.138, 0.15, 0.1],   waist: [0.1, 0.088, 0.078],  pelvis: [0.165, 0.105, 0.105], hipX: 0.096, limb: 0.9 },
   masculine: { label: "Masculine", sh: 0.2,   chest: [0.178, 0.172, 0.118], waist: [0.13, 0.095, 0.092], pelvis: [0.152, 0.1, 0.1],   hipX: 0.088, limb: 1.13 }
@@ -27,6 +28,31 @@ const FINGER = { // z along the palm (thumb side is +Z), segment lengths, radius
   ring:   { z: -0.01, len: [0.043, 0.034], r: 0.0085 },
   pinky:  { z: -0.029, len: [0.033, 0.027], r: 0.0075 }
 };
+
+/**
+ * Load the sculpted mannequin (a skinned GLB baked by tools/rig.py). Its mesh extras carry the skeleton:
+ * rest positions, parents and the joint order that JOINTS_0 indexes. Call once before create("sculpted").
+ */
+export async function loadSculpt(url = "./assets/models/mannequin.glb") {
+  const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+  const gltf = await new GLTFLoader().loadAsync(url);
+  let mesh = null;
+  gltf.scene.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+  const extras = gltf.parser.json.meshes[0].extras;
+  if (!mesh || !extras?.order || !mesh.geometry.attributes.skinIndex) throw new Error("mannequin.glb has no rig");
+  const geo = mesh.geometry;
+  geo.computeVertexNormals();
+  // the part each vertex mostly follows: picking and the selection glow read it
+  const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight, dom = new Float32Array(si.count);
+  for (let i = 0; i < si.count; i++) {
+    let best = 0, bw = -1;
+    for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > bw) { bw = w; best = si.getComponent(i, k); } }
+    dom[i] = best;
+  }
+  geo.setAttribute("aJoint", new THREE.BufferAttribute(dom, 1));
+  Mannequin.sculpt = { geometry: geo, ...extras };
+  return Mannequin.sculpt;
+}
 
 /** Mirror pairs: "l_elbow" <-> "r_elbow". */
 export function counterpartName(name) {
@@ -98,6 +124,8 @@ export class Mannequin {
     this.rest = new Map(); // name -> rest position
     this.build = "neutral";
     this.skin = "clay";
+    this.skinned = null;      // the sculpted build's SkinnedMesh
+    this.fingerBlock = false; // true when the four fingers move as one (sculpted build)
   }
 
   joint(name) {
@@ -113,13 +141,16 @@ export class Mannequin {
     const keep = this.root ? this.capture() : null;
     if (this.root) {
       this.scene.remove(this.root);
-      this.root.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.(); });
+      this.root.traverse((o) => { if (o !== this.skinned) o.geometry?.dispose(); o.material?.dispose?.(); }); // the sculpt geometry is shared
     }
-    this.build = BUILDS[build] ? build : "neutral";
+    this.build = BUILDS[build] && (!BUILDS[build].sculpted || Mannequin.sculpt) ? build : "neutral";
+    this.skinned = null;
     this.joints = [];
     this.byName.clear();
     this.rest.clear();
-    this._make(BUILDS[this.build]);
+    if (BUILDS[this.build].sculpted) this._makeSculpted(Mannequin.sculpt);
+    else this._make(BUILDS[this.build]);
+    this.fingerBlock = !!BUILDS[this.build].sculpted;
     this.scene.add(this.root);
     this.setSkin(this.skin);
     if (keep) this.restore(keep);
@@ -168,6 +199,22 @@ export class Mannequin {
     });
   }
 
+  /** The joint a ray hit on the sculpted skin belongs to (the vertex of the hit triangle nearest the hit). */
+  jointForHit(hit) {
+    if (!this.skinned || hit.object !== this.skinned) return null;
+    const a = this.skinned.geometry.attributes.aJoint, f = hit.face, b = hit.barycoord;
+    const v = !b ? f.a : b.x >= b.y && b.x >= b.z ? f.a : b.y >= b.z ? f.b : f.c;
+    return this.byName.get(Mannequin.sculpt.order[a.getX(v)]) || null;
+  }
+
+  /** Selection glow on the sculpted skin (one mesh, so it is done per vertex in the shader). */
+  paintJoints(selected, hovered) {
+    if (!this.skinned) return;
+    const u = this.skinned.material.userData.uniforms, order = Mannequin.sculpt.order;
+    u.uSel.value = selected ? order.indexOf(selected.name) : -1;
+    u.uHov.value = hovered ? order.indexOf(hovered.name) : -1;
+  }
+
   /** Meshes that belong to a joint's segment (what highlights when it is selected). */
   segmentMeshes(joint) {
     const out = [];
@@ -209,6 +256,43 @@ export class Mannequin {
     if (helper) m.userData.helper = true;
     joint.userData.segment.add(m);
     return m;
+  }
+
+  _makeSculpted(S) {
+    const root = this._joint("char_root", null);
+    this.root = root;
+    this._mesh(root, new THREE.TorusGeometry(0.34, 0.007, 8, 64).rotateX(Math.PI / 2), { y: 0.004, helper: true });
+    // rest rotations are identity: the sculpt's own stance is the rest pose, offsets are the measured deltas
+    for (const name of S.order) {
+      if (name === "char_root") continue;
+      const p = S.joints[name], q = S.joints[S.parents[name]];
+      this._joint(name, this.byName.get(S.parents[name]), p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    }
+    const uniforms = { uSel: { value: -1 }, uHov: { value: -1 }, uAccent: { value: new THREE.Color(0x7c5cff) } };
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.02 });
+    mat.userData.uniforms = uniforms;
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, uniforms);
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute float aJoint;\nflat varying float vJoint;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvJoint = aJoint;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nflat varying float vJoint;\nuniform float uSel;\nuniform float uHov;\nuniform vec3 uAccent;")
+        .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n"
+          + "{ float s = 1.0 - step(0.5, abs(vJoint - uSel)); float h = (1.0 - step(0.5, abs(vJoint - uHov))) * (1.0 - s);\n"
+          + "  totalEmissiveRadiance += uAccent * (0.42 * s + 0.16 * h); }");
+    };
+    const mesh = new THREE.SkinnedMesh(S.geometry, mat);
+    mesh.name = "sculpted_figure";
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 2.6); // posed limbs stay inside; no re-skinning per ray
+    mesh.userData = { pickable: true, skinned: true, tone: 1 };
+    root.add(mesh);
+    root.updateMatrixWorld(true);
+    // bones are the segment groups, so Scale mode on a part scales its own skin without its children
+    mesh.bind(new THREE.Skeleton(S.order.map((n) => this.byName.get(n).userData.segment)));
+    this.skinned = mesh;
   }
 
   _make(B) {
