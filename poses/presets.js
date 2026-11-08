@@ -105,7 +105,7 @@ export const PRESETS = [
       spine: [-8, 0, 0], head: [-16, 0, 0],
       l_hip: [-62, 0, -6], l_knee: [92, 0, 0], l_ankle: [30, 0, 0],
       r_hip: [-18, 0, 6], r_knee: [72, 0, 0], r_ankle: [30, 0, 0],
-      l_shoulder: [0, 0, -150], r_shoulder: [0, 0, 150], l_elbow: [-8, 0, 0], r_elbow: [-8, 0, 0]
+      l_shoulder: [0, 0, -135], r_shoulder: [0, 0, 135], l_elbow: [-8, 0, 0], r_elbow: [-8, 0, 0]
     }
   },
   {

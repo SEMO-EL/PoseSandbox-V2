@@ -62,6 +62,7 @@ LABELS = list(CAPS)
 def band_hops(j):
     if any(t in j for t in ("index", "thumb", "toes")): return 2
     if any(t in j for t in ("elbow", "knee", "wrist", "ankle")): return 3
+    if "shoulder" in j: return 2  # the ball turns inside the pad: a wide blend here smears the seam
     return 4
 
 
@@ -155,6 +156,52 @@ def refine_joints(lab, E):
     return moved
 
 
+def fit_shoulders(lab):
+    if BALL: return  # fit once, on the first segmentation (refits would slide down the arm)
+    """The shoulder pivot is the centre of the ball at the top of the upper arm (least-squares sphere fit)."""
+    for side in "lr":
+        top_y = J[f"{side}_shoulder"][1] - 0.06
+        pts = P[(lab == LABELS.index(f"{side}_shoulder")) & (P[:, 1] > top_y)]
+        A_ = np.c_[2 * pts, np.ones(len(pts))]
+        c, *_ = np.linalg.lstsq(A_, (pts ** 2).sum(1), rcond=None)
+        r = float(np.sqrt(c[3] + c[:3] @ c[:3]))
+        res = float(np.median(np.abs(np.linalg.norm(pts - c[:3], axis=1) - r)))
+        print(f"{side}_shoulder ball: centre {np.round(c[:3], 3)} r {r:.3f} residual {res * 1000:.1f} mm (was {np.round(J[f'{side}_shoulder'], 3)})")
+        J[f"{side}_shoulder"] = tuple(c[:3])
+        BALL[side] = (c[:3], r)
+
+
+BALL = {}
+
+
+def armpit_zone(side, k):
+    """Under the shoulder ball, toward the body: where a raised arm pulls the skin."""
+    c, r = BALL[side]
+    return (P[:, 1] < c[1] - 0.3 * r) & (P[:, 1] > c[1] - 0.2) & (k * P[:, 0] < k * c[0] + 0.03) & (k * P[:, 0] > k * c[0] - 0.12)         & (np.abs(P[:, 2] - c[2]) < 2.2 * r)
+
+
+def pad_follow(W, lab):
+    """The chest's shoulder pad covers the ball. Let its outer part follow the arm (up to 45% at the tip, nothing at
+    the neck side), like a deltoid: a raised arm lifts the pad instead of punching through it."""
+    ci = LABELS.index("chest")
+    for side, k in (("l", -1), ("r", 1)):
+        c, r = BALL[side]
+        ai = LABELS.index(f"{side}_shoulder")
+        lat = k * P[:, 0]                                    # distance out from the midline on this side
+        def sm(e0, e1, x): t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
+        f = 0.45 * sm(k * c[0] - 0.085, k * c[0] + 0.01, lat)             * sm(c[1] - r * 0.9, c[1] - r * 0.1, P[:, 1])             * (1 - sm(r * 1.5, r * 2.2, np.abs(P[:, 2] - c[2])))
+        # the chest wall under the arm (armpit): up to 30% just below the ball, fading 12 cm down the side,
+        # so a raised arm stretches the armpit smoothly instead of pulling a thin web
+        pit = 0.3 * sm(k * c[0] - 0.11, k * c[0] - 0.02, lat)             * (1 - sm(c[1] - r * 0.9 - 0.12, c[1] - r * 0.9, P[:, 1]) * 0 - 0)             * sm(c[1] - r * 0.9 - 0.12, c[1] - r * 0.9, P[:, 1]) * (1 - sm(c[1] - r * 0.6, c[1] - r * 0.1, P[:, 1]))             * (1 - sm(r * 1.2, r * 1.9, np.abs(P[:, 2] - c[2])))
+        f = np.maximum(f, pit)
+        v = np.where((lab == ci) & (f > 1e-3))[0]
+        move = W[v, ci] * f[v]
+        W[v, ci] -= move
+        W[v, ai] += move
+        print(f"{side} pad follow: {len(v)} chest vertices, max share {f[v].max():.2f}")
+    return W
+
+
 def mirror_toes():
     x, y, z = J["r_toes"]
     J["l_toes"] = (-x, y, z)
@@ -208,6 +255,11 @@ def weights(lab, A, E):
         band = seam.copy()
         for _ in range(band_hops(child)):
             band = (band | (A @ band.astype(float) > 0)) & both
+        if child.endswith("_shoulder") and BALL:  # armpit: widen to ~7 rings on both sides of the seam
+            wide = seam.copy()
+            for _ in range(7):
+                wide = (wide | (A @ wide.astype(float) > 0)) & both
+            band |= wide & armpit_zone(child[0], -1 if child[0] == "l" else 1)
         s = (lab == ci).astype(float)
         fixed = ~band
         for _ in range(60):
@@ -217,7 +269,7 @@ def weights(lab, A, E):
         tot = W[v, ci] + W[v, pi]
         W[v, ci] = tot * s[v]
         W[v, pi] = tot * (1 - s[v])
-    return W
+    return pad_follow(W, lab)
 
 
 COLORS = np.array([[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48], [145, 30, 180], [70, 240, 240],
@@ -227,6 +279,18 @@ COLORS = np.array([[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], 
 
 def segment(A, E, conc):
     lab = cleanup(watershed(seeds_from_capsules(), A, conc), A)
+    if BALL:  # the ball's cap hides under the pad: every outward-facing vertex on the ball belongs to the arm
+        n = vertex_normals()
+        for side in "lr":
+            c, r = BALL[side]
+            d = P - c
+            dist = np.linalg.norm(d, axis=1)
+            out = (n * d).sum(1) / np.maximum(dist, 1e-9)
+            ball = (dist < r * 1.2) & (out > 0.3)
+            moved = (ball & (lab != LABELS.index(f"{side}_shoulder"))).sum()
+            lab[ball] = LABELS.index(f"{side}_shoulder")
+            print(f"{side} ball cap: {moved} vertices moved to the arm")
+        lab = cleanup(lab, A)
     return lab
 
 
@@ -237,6 +301,7 @@ def run(mode):
     for it in range(2):  # refit pivots to the grooves, rebuild the capsules from them, segment again
         moved = refine_joints(lab, E)
         mirror_toes()
+        fit_shoulders(lab)
         print("refit", it, {k: round(v, 3) for k, v in moved.items() if v > 0.004})
         rebuild_caps()
         lab = segment(A, E, conc)
@@ -289,7 +354,10 @@ def defuzz(lab, A, E, rings=3, iters=20):
             Q[band] += k * lap[band]
     fins = normal_noise() > 0.25                             # then collapse the thin fins that Taubin keeps
     fins |= (A @ fins.astype(float)) > 0
-    for _ in range(15):
+    if BALL:                                                 # armpits stretch most: clean their seam band harder
+        for side, k in (("l", -1), ("r", 1)):
+            fins |= armpit_zone(side, k) & band
+    for _ in range(25):
         lap = (A @ Q) / deg - Q
         Q[fins] += 0.6 * lap[fins]
     moved = np.linalg.norm(Q - P, axis=1)
