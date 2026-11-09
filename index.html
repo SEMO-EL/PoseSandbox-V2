@@ -40,6 +40,10 @@
 </head>
 
 <body>
+  <!-- the studio: one WebGL scene behind the whole story (landing.js); the poster shows until it is live -->
+  <div class="scene__poster" aria-hidden="true"></div>
+  <canvas id="scene" class="scene" aria-hidden="true"></canvas>
+
   <header class="nav">
     <a class="brand" href="./index.html" aria-label="PoseSandbox home">
       <span class="brand__mark" aria-hidden="true"></span>
@@ -65,87 +69,84 @@
     <a class="btn" href="./app.html">Open the app</a>
   </div>
 
+  <p class="posename" aria-live="polite"><span class="posename__dot" aria-hidden="true"></span><span id="poseName">Contrapposto</span><span class="posename__hint"> · drag to turn</span></p>
+
   <main>
-    <!-- The story: one live stage, pinned while the hero and the features scroll past it -->
-    <section class="story" id="top">
-      <div class="stage" id="stage" tabindex="0" aria-label="The PoseSandbox mannequin in 3D. Drag, or use the arrow keys, to turn it.">
-        <img class="stage__poster" src="./assets/stage-poster.webp" width="845" height="812"
-             alt="The PoseSandbox mannequin standing in a relaxed contrapposto pose" fetchpriority="high" />
-        <canvas class="stage__canvas" id="stageCanvas"></canvas>
-        <p class="stage__cap"><span class="stage__name" id="stageName">Contrapposto</span> <span class="stage__hint">Drag to turn</span></p>
-      </div>
-
-      <div class="story__flow">
-        <div class="hero">
-          <h1 class="reveal">Pose faster. Create better.</h1>
-          <p class="hero__lead reveal">
-            A free 3D pose reference in your browser: pose an artist’s mannequin, drag its hands and feet, light the scene
-            and export a clean PNG in seconds. Nothing to install, no account.
-          </p>
-          <div class="hero__actions reveal">
-            <a class="btn btn--lg" href="./app.html">Start posing, free</a>
-            <a class="textlink" href="#packs">See the packs</a>
-          </div>
-          <div class="try reveal" id="try" hidden>
-            <p class="try__label">Try a pose on the figure</p>
-            <div class="try__row">
-              <button class="chip" data-try="contrapposto" aria-pressed="true">Contrapposto</button>
-              <button class="chip" data-try="walk" aria-pressed="false">Walk</button>
-              <button class="chip" data-try="run" aria-pressed="false">Run</button>
-              <button class="chip" data-try="jump" aria-pressed="false">Jump</button>
-              <button class="chip" data-try="wave" aria-pressed="false">Wave</button>
-              <button class="chip" data-try="fight" aria-pressed="false">Guard</button>
-              <button class="chip" data-try="kneel" aria-pressed="false">Kneel</button>
-            </div>
-          </div>
+    <section class="chapter chapter--hero" id="top" data-chapter="hero">
+      <div class="hero__copy">
+        <h1>Pose faster.<br />Create better.</h1>
+        <p class="hero__lead">A free 3D pose reference in your browser. Pose an artist’s mannequin, drag its hands and feet, light it, and export a clean PNG in seconds.</p>
+        <div class="hero__actions">
+          <a class="btn btn--lg" href="./app.html">Start posing, free</a>
+          <a class="textlink" href="#features">See what it does</a>
         </div>
-
-        <div class="features" id="features">
-          <div class="features__head">
-            <h2 class="reveal">Everything you need to pose</h2>
-            <p class="reveal">Built for drawing reference: quick to pose, easy to light, clean to export.</p>
-          </div>
-
-          <article class="feat" data-pose="contrapposto" data-look="studio">
-            <h3>An artist’s mannequin</h3>
-            <p>A sculpted, fully rigged action-figure mannequin with ball-jointed shoulders, jointed hands and toes, plus three classic builds and clay, wood or slate finishes.</p>
-          </article>
-
-          <article class="feat" data-pose="reach" data-look="studio">
-            <h3>Drag hands and feet</h3>
-            <p>Move a hand or a foot and the whole limb follows (IK). Move the body and the feet stay planted.</p>
-          </article>
-
-          <article class="feat" data-pose="fight" data-look="lights">
-            <h3>Your own lights</h3>
-            <p>Add point and spot lights, place them anywhere, and set their colour, brightness, cone and shadows.</p>
-          </article>
-
-          <article class="feat" data-pose="library" data-look="studio">
-            <h3>A pose library</h3>
-            <p>17 ready poses, 7 hand shapes, mirror, symmetry and random, with undo for everything. Pick one:</p>
-            <div class="thumbs">
-              <button class="thumb" data-try="run" aria-pressed="false"><img src="./assets/poses/run.webp" width="360" height="360" alt="Run" loading="lazy" /></button>
-              <button class="thumb" data-try="sit" aria-pressed="false"><img src="./assets/poses/sit.webp" width="360" height="360" alt="Sit" loading="lazy" /></button>
-              <button class="thumb" data-try="kneel" aria-pressed="false"><img src="./assets/poses/kneel.webp" width="360" height="360" alt="Kneel" loading="lazy" /></button>
-              <button class="thumb" data-try="jump" aria-pressed="false"><img src="./assets/poses/jump.webp" width="360" height="360" alt="Jump" loading="lazy" /></button>
-              <button class="thumb" data-try="squat" aria-pressed="false"><img src="./assets/poses/squat.webp" width="360" height="360" alt="Squat" loading="lazy" /></button>
-              <button class="thumb" data-try="bow" aria-pressed="false"><img src="./assets/poses/bow.webp" width="360" height="360" alt="Bow" loading="lazy" /></button>
-            </div>
-          </article>
-
-          <article class="feat" data-pose="point" data-look="export">
-            <h3>Clean PNG export</h3>
-            <p>1×, 2× or 4×, with an optional transparent background, or copy it straight into your drawing app.</p>
-          </article>
-
-          <article class="feat" data-pose="wave" data-look="studio">
-            <h3>Reference and saving</h3>
-            <p>Pin a photo over or behind the figure. Save poses with their props, lights and camera, and import pose packs.</p>
-          </article>
+        <div class="hero__try">
+        <p class="hero__tryLabel">Try a pose</p>
+        <div class="hero__chips">
+          <button class="chip" data-try="contrapposto" aria-pressed="true">Contrapposto</button>
+          <button class="chip" data-try="walk" aria-pressed="false">Walk</button>
+          <button class="chip" data-try="run" aria-pressed="false">Run</button>
+          <button class="chip" data-try="jump" aria-pressed="false">Jump</button>
+          <button class="chip" data-try="wave" aria-pressed="false">Wave</button>
+          <button class="chip" data-try="fight" aria-pressed="false">Guard</button>
+          <button class="chip" data-try="kneel" aria-pressed="false">Kneel</button>
+        </div>
         </div>
       </div>
     </section>
+
+    <div id="features">
+      <section class="chapter" data-chapter="form">
+        <div class="panel panel--left reveal">
+          <h2>An artist’s mannequin</h2>
+          <p>The jointed figure artists keep on the desk, rebuilt for the screen: ball shoulders, five real fingers per hand, toes, and a professional rig. Clay, wood or slate, plus three classic builds.</p>
+        </div>
+      </section>
+
+      <section class="chapter" data-chapter="reach">
+        <div class="panel panel--right reveal">
+          <h2>Drag hands and feet</h2>
+          <p>Grab a hand or a foot and the whole limb follows (IK). Move the body and the feet stay planted, so a pose takes seconds, not minutes.</p>
+        </div>
+      </section>
+
+      <section class="chapter" data-chapter="light">
+        <div class="panel panel--left reveal">
+          <h2>Your own lights</h2>
+          <p>Add point and spot lights, place them anywhere, and set their colour, brightness, cone and shadows. Light the figure the way your drawing needs it.</p>
+        </div>
+      </section>
+
+      <section class="chapter" data-chapter="library">
+        <div class="panel panel--right reveal">
+          <h2>A pose library</h2>
+          <p>17 ready poses, 7 hand shapes, mirror, symmetry and random, with undo for everything. Pick one:</p>
+          <div class="thumbs">
+            <button class="thumb" data-try="run" aria-pressed="false"><img src="./assets/poses/run.webp" width="360" height="360" alt="Run" loading="lazy" /></button>
+            <button class="thumb" data-try="sit" aria-pressed="false"><img src="./assets/poses/sit.webp" width="360" height="360" alt="Sit" loading="lazy" /></button>
+            <button class="thumb" data-try="kneel" aria-pressed="false"><img src="./assets/poses/kneel.webp" width="360" height="360" alt="Kneel" loading="lazy" /></button>
+            <button class="thumb" data-try="jump" aria-pressed="false"><img src="./assets/poses/jump.webp" width="360" height="360" alt="Jump" loading="lazy" /></button>
+            <button class="thumb" data-try="squat" aria-pressed="false"><img src="./assets/poses/squat.webp" width="360" height="360" alt="Squat" loading="lazy" /></button>
+            <button class="thumb" data-try="bow" aria-pressed="false"><img src="./assets/poses/bow.webp" width="360" height="360" alt="Bow" loading="lazy" /></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="chapter" data-chapter="export">
+        <div class="panel panel--left reveal">
+          <h2>Clean PNG export</h2>
+          <p>1×, 2× or 4×, on a transparent background if you like, or copied straight into your drawing app. No gizmos, no grid, just the figure.</p>
+        </div>
+      </section>
+
+      <section class="chapter" data-chapter="save">
+        <div class="panel panel--right reveal">
+          <h2>Reference and saving</h2>
+          <p>Pin a photo over or behind the figure. Save poses with their props, lights and camera, and import pose packs.</p>
+          <a class="btn btn--lg panel__cta" href="./app.html">Open PoseSandbox</a>
+        </div>
+      </section>
+    </div>
 
     <!-- Packs -->
     <section class="packs" id="packs">
@@ -213,7 +214,7 @@
 
         <details class="faqItem reveal">
           <summary>Will the 3D figure on this page slow my computer down?</summary>
-          <p>No. It only loads once it is on screen, only draws while you can see it, pauses in a hidden tab, and holds still if your system asks for reduced motion. The editor only redraws when something changes.</p>
+          <p>No. It loads after the page, only draws while you can see it, pauses in a hidden tab, and holds still if your system asks for reduced motion. The editor only redraws when something changes.</p>
         </details>
       </div>
     </section>
@@ -222,7 +223,7 @@
   <footer class="footer">
     <p class="footer__name">PoseSandbox</p>
     <div class="footer__row">
-      <span>© <span id="year"></span> PoseSandbox. Fast 3D posing in your browser.</span>
+      <span>© <span id="year"></span> PoseSandbox. Fast 3D posing in your browser. Mannequin model by <a class="textlink" href="https://quaternius.com" rel="noopener">Quaternius</a> (CC0).</span>
       <span class="footer__links">
         <a class="textlink" href="#top">Back to top</a>
         <a class="textlink" href="./app.html">Open the app</a>
