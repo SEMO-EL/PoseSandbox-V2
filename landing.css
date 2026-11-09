@@ -45,6 +45,8 @@ code { font: inherit; padding: 1px 6px; background: var(--surface2); }
 .is-live .scene { opacity: 1; }
 .is-live .scene__poster { opacity: 0; }
 main, .footer, .nav, .mobileMenu, .posename { position: relative; z-index: 1; }
+main { pointer-events: none; } /* drags fall through to the studio canvas (drag to turn); the panels and links take them back */
+.packs, .faq { pointer-events: auto; }
 
 /* ---- buttons and links */
 .btn {

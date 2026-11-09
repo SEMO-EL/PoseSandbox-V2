@@ -205,29 +205,36 @@ async function boot() {
   beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), key.position.clone().normalize());
   scene.add(beam);
 
-  // dust drifting and twinkling through the beam; a few motes catch the gels' colours
-  const DUST = 340, dustPos = new Float32Array(DUST * 3), dustSpeed = new Float32Array(DUST), dustPhase = new Float32Array(DUST);
-  const dustCol = new Float32Array(DUST * 3), tints = [0xdfe6ff, 0xdfe6ff, 0xdfe6ff, 0xdfe6ff, 0xa48dff, 0x7fe3ff, POP].map((c) => new THREE.Color(c));
-  const dustTint = [];
-  for (let i = 0; i < DUST; i++) {
-    const t = Math.random(), r = Math.sqrt(Math.random()) * Math.tan(key.angle) * beamLen * 0.8 * (1 - t), a = Math.random() * 6.283;
-    const p = key.position.clone().multiplyScalar(t);
-    dustPos.set([p.x + r * Math.cos(a), p.y + r * Math.sin(a) * 0.4, p.z + r * Math.sin(a)], i * 3);
-    dustSpeed[i] = 0.02 + Math.random() * 0.05;
-    dustPhase[i] = Math.random() * 6.283;
-    dustTint.push(tints[Math.floor(Math.random() * tints.length)]);
-    dustTint[i].toArray(dustCol, i * 3);
-  }
-  const dustBase = dustPos.slice();
-  const dustGeo = new THREE.BufferGeometry();
-  dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
-  dustGeo.setAttribute("color", new THREE.BufferAttribute(dustCol, 3));
+  // dust drifting and twinkling through the beam, and fainter motes wandering the whole studio in front of the backdrop;
+  // a few catch the gels' colours
   const dot = document.createElement("canvas"); dot.width = dot.height = 32;
   { const c = dot.getContext("2d"), g = c.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, 32, 32); }
-  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
-    size: 0.04, map: new THREE.CanvasTexture(dot), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true
-  }));
-  scene.add(dust);
+  const dotMap = new THREE.CanvasTexture(dot);
+  function motes(n, place, { size, opacity, speed, top, sway, tints }) {
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), m = { n, top, sway, speed: [], phase: [], tint: [] };
+    tints = tints.map((c) => new THREE.Color(c));
+    for (let i = 0; i < n; i++) {
+      pos.set(place(), i * 3);
+      m.speed.push(speed * (0.4 + Math.random())); m.phase.push(Math.random() * 6.283);
+      m.tint.push(tints[Math.floor(Math.random() * tints.length)]); m.tint[i].toArray(col, i * 3);
+    }
+    m.base = pos.slice();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    m.points = new THREE.Points(geo, new THREE.PointsMaterial({
+      size, map: dotMap, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true
+    }));
+    scene.add(m.points);
+    return m;
+  }
+  const dust = motes(340, () => {
+    const t = Math.random(), r = Math.sqrt(Math.random()) * Math.tan(key.angle) * beamLen * 0.8 * (1 - t), a = Math.random() * 6.283;
+    const p = key.position.clone().multiplyScalar(t);
+    return [p.x + r * Math.cos(a), p.y + r * Math.sin(a) * 0.4, p.z + r * Math.sin(a)];
+  }, { size: 0.04, opacity: 0.55, speed: 0.05, top: key.position.y * 0.9, sway: 0.12, tints: [0xdfe6ff, 0xdfe6ff, 0xdfe6ff, 0xdfe6ff, 0xa48dff, 0x7fe3ff, POP] });
+  const haze = motes(260, () => [(Math.random() - 0.5) * 16, 0.3 + Math.random() * 5, -5.2 + Math.random() * 4],
+    { size: 0.15, opacity: 0.5, speed: 0.025, top: 5.5, sway: 0.35, tints: [0xdfe6ff, 0xdfe6ff, 0xa48dff, 0xa48dff, 0x7fe3ff, 0x7fe3ff, POP] });
 
   // ---- the giant word on the backdrop (two planes, cross-faded when the chapter changes)
   function wordTexture(text) {
@@ -313,7 +320,7 @@ async function boot() {
     for (const n of num) { const d = goal[n] - cur[n]; if (Math.abs(d) > 0.01) { cur[n] += d * k; moving = true; } else cur[n] = goal[n]; }
     for (const n of ["wall", "bg", "word"]) { tmp.set(goal[n]); if (!cur[n].equals(tmp)) { cur[n].lerp(tmp, k); moving = true; if (Math.abs(cur[n].r - tmp.r) + Math.abs(cur[n].g - tmp.g) + Math.abs(cur[n].b - tmp.b) < 0.003) cur[n].copy(tmp); } }
     key.intensity = cur.key; rimV.intensity = cur.rimV; rimC.intensity = cur.rimC; pink.intensity = cur.pink; warm.intensity = cur.warm; hemi.intensity = cur.hemi;
-    beamMat.uniforms.uStrength.value = cur.beam; dust.material.opacity = 0.55 * cur.beam; glow.uGlow.value = cur.glow;
+    beamMat.uniforms.uStrength.value = cur.beam; dust.points.material.opacity = 0.55 * cur.beam; haze.points.material.opacity = 0.5 * Math.min(1, cur.glow); glow.uGlow.value = cur.glow;
     wallMat.color.copy(cur.wall); fogColor.copy(cur.bg);
     for (const w of words) { w.material.color.copy(cur.word); w.material.emissive.copy(cur.word).multiplyScalar(0.22); }
     return moving;
@@ -408,12 +415,12 @@ async function boot() {
     if (wordFade < 1) wordFade = Math.min(1, wordFade + dt * 1.6);
     words[wordFront].material.opacity = 0.9 * wordFade;
     words[1 - wordFront].material.opacity = 0.9 * (1 - wordFade);
-    if (!reduce) {
-      const a = dustGeo.attributes.position, c = dustGeo.attributes.color;
-      for (let i = 0; i < DUST; i++) {
-        let y = a.getY(i) + dustSpeed[i] * dt; if (y > key.position.y * 0.9) y = 0.2;
-        a.setXYZ(i, dustBase[i * 3] + 0.12 * Math.sin(s * 0.4 + dustPhase[i]), y, dustBase[i * 3 + 2] + 0.12 * Math.cos(s * 0.33 + dustPhase[i]));
-        const tw = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(s * 1.9 + dustPhase[i] * 3)) ** 3, t = dustTint[i];
+    if (!reduce) for (const m of [dust, haze]) {
+      const a = m.points.geometry.attributes.position, c = m.points.geometry.attributes.color;
+      for (let i = 0; i < m.n; i++) {
+        let y = a.getY(i) + m.speed[i] * dt; if (y > m.top) y = 0.2;
+        a.setXYZ(i, m.base[i * 3] + m.sway * Math.sin(s * 0.4 + m.phase[i]), y, m.base[i * 3 + 2] + m.sway * Math.cos(s * 0.33 + m.phase[i]));
+        const tw = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(s * 1.9 + m.phase[i] * 3)) ** 3, t = m.tint[i];
         c.setXYZ(i, t.r * tw, t.g * tw, t.b * tw);
       }
       a.needsUpdate = c.needsUpdate = true;
