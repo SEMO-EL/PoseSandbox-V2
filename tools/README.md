@@ -1,20 +1,20 @@
 # tools/
 
-`rig.py` turns the sculpted mannequin (`mannequin-source.glb`, a Meshy AI "Blank Mannequin" generation) into the
-skinned figure the app loads, `assets/models/mannequin.glb`:
+`ual_convert.py` makes the figure the app loads, `assets/models/mannequin.glb`, from Quaternius's
+**Universal Animation Library** mannequin ([OpenGameArt](https://opengameart.org/content/universal-animation-library),
+Standard zip, `Godot/AnimationLibrary_Godot_Standard.glb`), released under **CC0 1.0** (no attribution required; credited anyway).
 
-1. normalise (1.80 m tall, feet on y = 0), fit PoseSandbox's skeleton (v1 joint names kept, so old pose files load);
-2. segment the welded surface into parts with a crease-aware flood (part boundaries land in the sculpted grooves),
-   refit each pivot to the centre of its groove ring, segment again;
-3. smooth Meshy's seam fuzz in the grooves only (Taubin, then fin collapse on noisy-normal vertices);
-4. blend weights in a band of a few edge rings at each seam (≤ 3 influences, each vertex sums to exactly 1);
-   the shoulders are not blended but cut free like an art mannequin's ball joint: the cut follows a smooth curve
-   (the l seam, mirrored onto r), the arm's top is reshaped into a ball flowing into the arm and capped, and the
-   chest gets a spherical socket whose lip hugs the ball, so nothing stretches or tears at any arm angle;
-5. bake a GLB with JOINTS_0 / WEIGHTS_0; the mesh extras carry joint order, parents and rest positions.
+It keeps the artist's skin weights and normals and only:
 
-    python tools/rig.py labels   # tools/_labels.glb: parts colour-coded (view with tests/glb.html?src=../tools/_labels.glb)
-    python tools/rig.py bake     # assets/models/mannequin.glb
+1. merges the Rigify bones onto PoseSandbox's joints (v1 names, so old pose files load; `.L` bones are the figure's left,
+   the app's legacy `r_` side; clavicles join the chest, finger segments 2 and 3 join);
+2. lowers the T-pose arms to hang straight down through those same weights (the app's rest pose; the T-pose preset
+   brings them back);
+3. scales it to 1.80 m with the feet on y = 0, and writes the joint rings' darker tone as vertex colour.
 
-The four fingers are fused in the sculpt, so they move as one block (driven by the index joints); thumbs are separate.
-Check `tests/selfcheck.html` after a re-bake (bind, weights, presets on the floor, IK).
+    python tools/ual_convert.py path/to/AnimationLibrary_Godot_Standard.glb
+
+Check `tests/selfcheck.html` after a conversion (bind, weights, presets on the floor, IK); `tests/viewer.html` shows the
+figure alone (`?preset=jump&view=x,y,z&look=x,y,z`).
+
+`landing_shots.py` re-renders the home page's poster and pose thumbnails from its live stage.

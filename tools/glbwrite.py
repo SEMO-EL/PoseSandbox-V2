@@ -27,7 +27,7 @@ def write_glb(path, positions, indices, normals=None, colors=None, joints=None, 
 
     mesh = {"name": "figure", "primitives": [{"attributes": attrs, "indices": ind, "mode": 4}]}
     if extras: mesh["extras"] = extras
-    doc = {"asset": {"version": "2.0", "generator": "PoseSandbox tools/rig.py"}, "scene": 0, "scenes": [{"nodes": [0]}],
+    doc = {"asset": {"version": "2.0", "generator": "PoseSandbox tools/glbwrite.py"}, "scene": 0, "scenes": [{"nodes": [0]}],
            "nodes": [{"name": "figure", "mesh": 0}], "meshes": [mesh], "accessors": accessors, "bufferViews": views,
            "buffers": [{"byteLength": sum(len(c) for c in chunks)}]}
     js = json.dumps(doc, separators=(",", ":")).encode()

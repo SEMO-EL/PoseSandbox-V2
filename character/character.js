@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export const BUILDS = {
-  sculpted:  { label: "Sculpted", sculpted: true }, // assets/models/mannequin.glb, rigged by tools/rig.py
+  sculpted:  { label: "Mannequin", sculpted: true }, // assets/models/mannequin.glb: Quaternius's CC0 mannequin, tools/ual_convert.py
   neutral:   { label: "Neutral",   sh: 0.18,  chest: [0.155, 0.16, 0.105], waist: [0.118, 0.09, 0.085], pelvis: [0.15, 0.1, 0.1],     hipX: 0.088, limb: 1 },
   feminine:  { label: "Feminine",  sh: 0.165, chest: [0.138, 0.15, 0.1],   waist: [0.1, 0.088, 0.078],  pelvis: [0.165, 0.105, 0.105], hipX: 0.096, limb: 0.9 },
   masculine: { label: "Masculine", sh: 0.2,   chest: [0.178, 0.172, 0.118], waist: [0.13, 0.095, 0.092], pelvis: [0.152, 0.1, 0.1],   hipX: 0.088, limb: 1.13 }
@@ -30,7 +30,7 @@ const FINGER = { // z along the palm (thumb side is +Z), segment lengths, radius
 };
 
 /**
- * Load the sculpted mannequin (a skinned GLB baked by tools/rig.py). Its mesh extras carry the skeleton:
+ * Load the mannequin (a skinned GLB made by tools/ual_convert.py). Its mesh extras carry the skeleton:
  * rest positions, parents and the joint order that JOINTS_0 indexes. Call once before create("sculpted").
  */
 export async function loadSculpt(url = "./assets/models/mannequin.glb") {
@@ -41,7 +41,7 @@ export async function loadSculpt(url = "./assets/models/mannequin.glb") {
   const extras = gltf.parser.json.meshes[0].extras;
   if (!mesh || !extras?.order || !mesh.geometry.attributes.skinIndex) throw new Error("mannequin.glb has no rig");
   const geo = mesh.geometry;
-  geo.computeVertexNormals();
+  if (!geo.attributes.normal) geo.computeVertexNormals(); // keep the artist's normals when the file has them
   // the part each vertex mostly follows: picking and the selection glow read it
   const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight, dom = new Float32Array(si.count);
   for (let i = 0; i < si.count; i++) {
@@ -269,7 +269,7 @@ export class Mannequin {
       this._joint(name, this.byName.get(S.parents[name]), p[0] - q[0], p[1] - q[1], p[2] - q[2]);
     }
     const uniforms = { uSel: { value: -1 }, uHov: { value: -1 }, uAccent: { value: new THREE.Color(0x7c5cff) } };
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.02 });
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.02, vertexColors: !!S.geometry.attributes.color }); // colour = tone (joint rings darker)
     mat.userData.uniforms = uniforms;
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, uniforms);
