@@ -109,6 +109,8 @@ def main(src):
     top[q == 0] = 0
     assert (q.sum(1) == 255).all() and (q >= 0).all()
 
+    # the neck's ring shows only as a grey smudge under the chin, so it takes the body's tone
+    T[np.isin(top[:, 0], [ORDER.index(n) for n in ("chest", "neck", "head")])] = 1.0
     tone = np.round(T * 255).astype(np.uint8)
     C = np.stack([tone, tone, tone, np.full(len(P), 255, np.uint8)], 1)
     extras = {"order": ORDER, "parents": {n: PARENT.get(n) for n in ORDER if n != "char_root"}, "joints": joints,

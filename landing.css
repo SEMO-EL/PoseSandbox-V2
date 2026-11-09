@@ -80,7 +80,7 @@ main { pointer-events: none; } /* drags fall through to the studio canvas (drag 
 .is-scrolled .nav { background: rgba(9, 12, 20, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .is-past .nav { background: var(--ground); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.brand__mark { width: 18px; height: 18px; background: var(--accent); border-radius: 4px; }
+.brand__mark { width: 26px; height: 26px; background: url("assets/favicon.svg") center / contain no-repeat; } /* the logo */
 .brand__title { font-weight: 800; font-size: var(--lead); letter-spacing: -0.02em; }
 .nav__links { display: flex; align-items: center; gap: 28px; }
 .nav__link { text-decoration: none; font-weight: 500; color: var(--ink); transition: color 160ms var(--ease); } /* full ink: the gels pass behind it */

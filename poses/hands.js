@@ -1,6 +1,7 @@
 // poses/hands.js
 // Hand shapes. Angles are degrees, Euler order ZYX, written for the legacy "l_" hand; the other hand is mirrored.
 // Fingers hang along -Y with the palm facing the body, so curling a finger is a Z rotation toward the palm.
+// A closed hand folds the thumb's tip segment ~100 deg about X so it lies across the curled index and middle fingers.
 
 import * as THREE from "three";
 import { FINGERS } from "../character/character.js";
@@ -12,10 +13,10 @@ const curl = (base, tip, spread = [0, 0, 0, 0]) =>
 export const HAND_POSES = {
   relaxed: { label: "Relaxed", ...curl([18, 24, 28, 32], [22, 28, 32, 36]), thumb1: [20, 0, 12], thumb2: [0, 0, 18] },
   open:    { label: "Open",    ...curl([0, 0, 0, 0], [0, 0, 0, 0], [-10, -3, 4, 11]), thumb1: [-12, 0, -8], thumb2: [0, 0, 0] },
-  fist:    { label: "Fist",    ...curl([88, 92, 94, 96], [100, 104, 104, 104]), thumb1: [52, 0, 38], thumb2: [0, 0, 45] },
-  point:   { label: "Point",   ...curl([0, 92, 94, 96], [0, 104, 104, 104]), thumb1: [48, 0, 34], thumb2: [0, 0, 40] },
+  fist:    { label: "Fist",    ...curl([88, 92, 94, 96], [100, 104, 104, 104]), thumb1: [0, 0, -10], thumb2: [100, 10, 0] },
+  point:   { label: "Point",   ...curl([0, 92, 94, 96], [0, 104, 104, 104]), thumb1: [0, 0, -10], thumb2: [100, 10, 0] },
   grip:    { label: "Grip",    ...curl([62, 66, 68, 70], [70, 74, 74, 76]), thumb1: [40, 0, 26], thumb2: [0, 0, 26] },
-  peace:   { label: "Peace",   ...curl([0, 0, 94, 96], [0, 0, 104, 104], [-9, 6, 0, 0]), thumb1: [50, 0, 36], thumb2: [0, 0, 42] },
+  peace:   { label: "Peace",   ...curl([0, 0, 94, 96], [0, 0, 104, 104], [-9, 6, 0, 0]), thumb1: [0, 0, -10], thumb2: [100, 10, 0] },
   claw:    { label: "Claw",    ...curl([30, 32, 34, 36], [80, 84, 84, 86], [-8, -2, 4, 9]), thumb1: [10, 0, 20], thumb2: [0, 0, 40] }
 };
 
