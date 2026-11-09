@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export const BUILDS = {
-  sculpted:  { label: "Mannequin", sculpted: true }, // assets/models/mannequin.glb: Quaternius's CC0 mannequin, tools/ual_convert.py
+  sculpted:  { label: "Mannequin", sculpted: true }, // assets/models/mannequin.glb: a CC0 MakeHuman figure, tools/mh_build.py + mh_convert.py
   neutral:   { label: "Neutral",   sh: 0.18,  chest: [0.155, 0.16, 0.105], waist: [0.118, 0.09, 0.085], pelvis: [0.15, 0.1, 0.1],     hipX: 0.088, limb: 1 },
   feminine:  { label: "Feminine",  sh: 0.165, chest: [0.138, 0.15, 0.1],   waist: [0.1, 0.088, 0.078],  pelvis: [0.165, 0.105, 0.105], hipX: 0.096, limb: 0.9 },
   masculine: { label: "Masculine", sh: 0.2,   chest: [0.178, 0.172, 0.118], waist: [0.13, 0.095, 0.092], pelvis: [0.152, 0.1, 0.1],   hipX: 0.088, limb: 1.13 }
@@ -30,7 +30,7 @@ const FINGER = { // z along the palm (thumb side is +Z), segment lengths, radius
 };
 
 /**
- * Load the mannequin (a skinned GLB made by tools/ual_convert.py). Its mesh extras carry the skeleton:
+ * Load the mannequin (a skinned GLB made by tools/mh_convert.py). Its mesh extras carry the skeleton:
  * rest positions, parents and the joint order that JOINTS_0 indexes. Call once before create("sculpted").
  */
 export async function loadSculpt(url = "./assets/models/mannequin.glb") {
