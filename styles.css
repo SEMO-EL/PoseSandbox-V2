@@ -70,6 +70,9 @@ kbd { font: 600 10.5px/1 var(--font); padding: 3px 5px; border-radius: 5px; bord
 .inspector { border-color: rgba(124,92,255,0.28); }
 .badge { font-size: 12px; font-weight: 600; color: #cbbcff; background: rgba(124,92,255,0.16); border-radius: 999px; padding: 2px 9px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.more > summary { cursor: pointer; font-size: 12px; color: var(--accent2); list-style: none; }
+.more > summary::-webkit-details-marker { display: none; }
+.more[open] > summary { margin-bottom: 8px; }
 .stack { display: flex; flex-direction: column; gap: 9px; }
 .stack--tight { gap: 6px; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -146,6 +149,10 @@ input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px sol
 .practice .iconbtn[aria-pressed="true"] { background: rgba(36,210,255,0.14); border-color: rgba(36,210,255,0.55); }
 .is-practice .panel, .is-practice .vbar, .is-practice .vhint, .is-practice .group, .is-practice #btnImport3D, .is-practice #btnPractice { display: none; }
 .is-practice .layout { grid-template-columns: minmax(0, 1fr); }
+.tips { position: absolute; left: 12px; bottom: 52px; width: min(300px, calc(100% - 24px)); padding: 12px; border-radius: 12px; background: rgba(17,26,43,0.94); border: 1px solid rgba(124,92,255,0.45); box-shadow: 0 16px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 8px; }
+.tips ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12.5px; }
+.tips b { color: var(--text); }
+.is-practice .tips { display: none; }
 .vhint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 999px; background: rgba(13,19,32,0.72); border: 1px solid var(--line); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .perf { position: absolute; top: 12px; right: 12px; font: 12px/1.4 ui-monospace, Consolas, monospace; color: #bfe9ff; background: rgba(0,0,0,0.5); padding: 6px 9px; border-radius: 8px; pointer-events: none; }
 .toast { position: absolute; left: 50%; bottom: 52px; transform: translate(-50%, 8px); opacity: 0; transition: opacity .18s, transform .18s; background: #1b2540; border: 1px solid var(--line2); padding: 8px 14px; border-radius: 10px; font-weight: 600; pointer-events: none; max-width: calc(100% - 24px); text-align: center; }
@@ -191,6 +198,7 @@ fieldset { border: 0; padding: 0; margin: 0; }
   .vopts { top: 62px; left: 50%; transform: translateX(-50%); }
   .vopts .vbtn span { display: none; }
   .is-practice .vopts { top: 80px; }
+  .tips { bottom: 108px; }
   .vhint { bottom: 64px; }
   .toast { bottom: 100px; }
 }

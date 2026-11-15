@@ -124,6 +124,17 @@
               <label class="field"><span class="label">Build</span><select id="figBuild" class="select"></select></label>
               <label class="field"><span class="label">Material</span><select id="figSkin" class="select"></select></label>
             </div>
+            <label class="field"><span class="label">Proportions</span><select id="figProp" class="select"></select></label>
+            <details class="more">
+              <summary>Adjust proportions</summary>
+              <div class="stack stack--tight">
+                <label class="slider"><span class="label">Head</span><input type="range" id="pr_head" min="0.7" max="2" step="0.01" /><output></output></label>
+                <label class="slider"><span class="label">Torso</span><input type="range" id="pr_torso" min="0.6" max="1.3" step="0.01" /><output></output></label>
+                <label class="slider"><span class="label">Arms</span><input type="range" id="pr_arms" min="0.5" max="1.3" step="0.01" /><output></output></label>
+                <label class="slider"><span class="label">Legs</span><input type="range" id="pr_legs" min="0.45" max="1.35" step="0.01" /><output></output></label>
+                <label class="slider"><span class="label">Bulk</span><input type="range" id="pr_bulk" min="0.7" max="1.5" step="0.01" /><output></output></label>
+              </div>
+            </details>
             <p class="hint" id="figCount">One figure</p>
             <div class="grid2"><button class="btn" id="btnAddFigure" type="button">Add figure</button><button class="btn btn--danger" id="btnRemoveFigure" type="button" disabled>Remove figure</button></div>
             <label class="field"><span class="label">Background</span><select id="bgTone" class="select"></select></label>
@@ -248,6 +259,15 @@
         <button class="iconbtn" id="prNext" type="button" aria-label="Next pose" title="Next pose (→)"><svg><use href="#i-next"/></svg></button>
         <button class="btn" id="prExit" type="button" title="End practice (Esc)">End</button>
       </div>
+      <aside class="tips" id="tips" hidden aria-label="First steps">
+        <strong>Three things to try</strong>
+        <ol>
+          <li><b>Drag a hand or a foot.</b> The whole limb follows.</li>
+          <li><b>Change the look</b> (top of the view): flat values, ink lines or a silhouette.</li>
+          <li><b>Practice</b> (top bar): timed poses for gesture drawing.</li>
+        </ol>
+        <button class="btn btn--primary" id="btnTips" type="button">Got it</button>
+      </aside>
       <p class="vhint" id="vhint">Drag a body part to pose it · drag empty space to orbit · scroll to zoom</p>
       <div class="perf" id="perf" hidden></div>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>

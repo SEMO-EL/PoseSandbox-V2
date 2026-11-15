@@ -21,6 +21,18 @@ export const SKINS = {
   slate: { label: "Slate", color: 0x8c95ab }
 };
 
+/** Body proportions: multipliers on the standard figure. head = head size, bulk = how wide and deep the body is. */
+export const PROPORTIONS = {
+  standard: { label: "Standard", head: 1,    torso: 1,    arms: 1,    legs: 1,    bulk: 1 },
+  heroic:   { label: "Heroic",   head: 0.92, torso: 1,    arms: 1.04, legs: 1.1,  bulk: 1.08 },
+  slender:  { label: "Slender",  head: 0.96, torso: 0.98, arms: 1.04, legs: 1.08, bulk: 0.88 },
+  stocky:   { label: "Stocky",   head: 1.05, torso: 1,    arms: 0.96, legs: 0.9,  bulk: 1.25 },
+  teen:     { label: "Teen",     head: 1.12, torso: 0.92, arms: 0.94, legs: 0.92, bulk: 0.9 },
+  child:    { label: "Child",    head: 1.3,  torso: 0.8,  arms: 0.78, legs: 0.72, bulk: 0.9 },
+  chibi:    { label: "Chibi",    head: 1.9,  torso: 0.62, arms: 0.6,  legs: 0.5,  bulk: 1.15 }
+};
+export const PROPORTION_KEYS = ["head", "torso", "arms", "legs", "bulk"];
+
 export const FINGERS = ["index", "middle", "ring", "pinky"];
 const FINGER = { // z along the palm (thumb side is +Z), segment lengths, radius
   index:  { z: 0.03,  len: [0.042, 0.034], r: 0.0088 },
@@ -121,7 +133,10 @@ export class Mannequin {
     this.root = null;
     this.joints = [];
     this.byName = new Map();
-    this.rest = new Map(); // name -> rest position
+    this.rest = new Map(); // name -> rest position (with the proportions applied)
+    this.base = new Map(); // name -> rest position of the standard figure
+    this.restScale = new Map(); // name -> the segment's scale at rest (1,1,1 on the standard figure)
+    this.proportions = { ...PROPORTIONS.standard, label: undefined };
     this.build = "neutral";
     this.skin = "clay";
     this.skinned = null;      // the sculpted build's SkinnedMesh
@@ -150,6 +165,8 @@ export class Mannequin {
     this.rest.clear();
     if (BUILDS[this.build].sculpted) this._makeSculpted(Mannequin.sculpt);
     else this._make(BUILDS[this.build]);
+    this.base = new Map([...this.rest].map(([n, p]) => [n, p.clone()]));
+    this._proportion();
     this.fingerBlock = !!BUILDS[this.build].sculpted;
     this.scene.add(this.root);
     this.setSkin(this.skin);
@@ -163,18 +180,61 @@ export class Mannequin {
     this.root.traverse((o) => { if (o !== this.skinned) o.geometry?.dispose(); o.material?.dispose?.(); });
   }
 
-  /** Every joint's local transform, for rebuilds. */
+  /**
+   * Change the body's proportions (see PROPORTIONS). Bones get longer or shorter by moving the joints and stretching
+   * each part's own segment to match; the pose (rotations, and anything moved or scaled by hand) is kept.
+   */
+  setProportions(p = {}) {
+    const keep = this.capture();
+    for (const k of PROPORTION_KEYS) this.proportions[k] = THREE.MathUtils.clamp(Number(p[k]) || 1, 0.4, 2.2);
+    this._proportion();
+    this.restore(keep);
+    return this;
+  }
+
+  isStandard() {
+    return PROPORTION_KEYS.every((k) => Math.abs(this.proportions[k] - 1) < 1e-6);
+  }
+
+  _proportion() {
+    const P = this.proportions;
+    const kind = (name) => {
+      const part = name.replace(/^[lr]_/, "");
+      if (/^(elbow|wrist)$/.test(part)) return "arms";   // the joint at the far end of an upper arm / forearm
+      if (/^(knee|ankle)$/.test(part)) return "legs";
+      if (/^(spine|chest|neck)$/.test(part)) return "torso";
+      return null;
+    };
+    const seg = { shoulder: "arms", elbow: "arms", hip: "legs", knee: "legs", spine: "torso", chest: "torso" }; // parts that stretch
+    let drop = 0; // how much lower the hip joints' feet end up, so the pelvis can rise by as much
+    for (const j of this.joints) {
+      const base = this.base.get(j.name), rest = this.rest.get(j.name).copy(base), part = j.name.replace(/^[lr]_/, "");
+      const k = kind(j.name);
+      if (k) rest.multiplyScalar(P[k]);
+      if (part === "shoulder") rest.set(base.x * P.bulk, base.y * P.torso, base.z);
+      if (part === "hip") rest.x = base.x * P.bulk;
+      if (j.name === "l_knee" || j.name === "l_ankle") drop += -base.y * (P.legs - 1);
+      const s = new THREE.Vector3(1, 1, 1);
+      if (part === "head") s.setScalar(P.head);
+      else if (j.name !== "char_root" && !/thumb|index|middle|ring|pinky|wrist|ankle|toes/.test(part)) s.set(P.bulk, seg[part] ? P[seg[part]] : 1, P.bulk);
+      this.restScale.set(j.name, s);
+    }
+    this.rest.get("hips").y += drop;
+    for (const j of this.joints) { j.position.copy(this.rest.get(j.name)); j.userData.segment.scale.copy(this.restScale.get(j.name)); }
+  }
+
+  /** Every joint's local transform, for rebuilds: where it is relative to rest, its rotation, its scale relative to rest. */
   capture() {
-    return this.joints.map((j) => ({ name: j.name, p: j.position.clone(), q: j.quaternion.clone(), s: j.userData.segment.scale.clone() }));
+    return this.joints.map((j) => ({ name: j.name, d: j.position.clone().sub(this.rest.get(j.name)), q: j.quaternion.clone(), s: j.userData.segment.scale.clone().divide(this.restScale.get(j.name)) }));
   }
 
   restore(list) {
     for (const e of list) {
       const j = this.joint(e.name);
       if (!j) continue;
-      j.position.copy(e.p);
+      j.position.copy(this.rest.get(j.name)).add(e.d);
       j.quaternion.copy(e.q);
-      j.userData.segment.scale.copy(e.s);
+      j.userData.segment.scale.copy(this.restScale.get(j.name)).multiply(e.s);
     }
   }
 
@@ -184,7 +244,7 @@ export class Mannequin {
       if (keepRoot && j.name === "char_root") continue;
       j.position.copy(this.rest.get(j.name));
       j.quaternion.identity();
-      j.userData.segment.scale.set(1, 1, 1);
+      j.userData.segment.scale.copy(this.restScale.get(j.name));
     }
   }
 

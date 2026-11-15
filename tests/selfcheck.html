@@ -6,7 +6,7 @@
 <body><h1>PoseSandbox self-check</h1><ol id="out"></ol>
 <script type="module">
 import * as THREE from "three";
-import { Mannequin, CHAINS, loadSculpt } from "../character/character.js";
+import { Mannequin, CHAINS, PROPORTIONS, loadSculpt } from "../character/character.js";
 import { createWorld, createProp } from "../core/world.js";
 import { createHistory } from "../core/history.js";
 import { isTypingTarget } from "../core/helpers.js";
@@ -191,6 +191,33 @@ const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
     if (miss > 1e-3 || Math.abs(q.y) > 0.02 || Math.abs(q.z) > 0.02 || q.x * q.w * sign <= 0) bad.push(`${chain}: off ${miss.toExponential(1)}, q ${q.toArray().map((v) => v.toFixed(3))}`);
   }
   check("hinged IK reaches and bends elbows and knees about one axis", !bad.length, bad.join("; "));
+}
+
+// 13 · proportions: every preset body stands on the floor at rest, keeps its pose, survives save → load, and
+//      going back to Standard gives the standard figure back exactly
+{
+  const A = rig(), fig = A.figure, bad = [];
+  const standard = json(A.ctx);
+  applyPreset(fig, PRESETS.find((p) => p.id === "walk"));
+  const walk = fig.joint("l_hip").quaternion.clone();
+  for (const [k, P] of Object.entries(PROPORTIONS)) {
+    fig.setProportions(P);
+    if (fig.joint("l_hip").quaternion.angleTo(walk) > 1e-6) bad.push(k + " lost the pose");
+    const keep = fig.capture();
+    fig.resetPose();
+    fig.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    fig.root.traverse((o) => { if (o.isMesh && !o.userData.helper) box.expandByObject(o, true); });
+    if (Math.abs(box.min.y) > 0.012) bad.push(`${k} rests ${box.min.y.toFixed(3)} off the floor`);
+    fig.restore(keep);
+  }
+  const B = rig();
+  applyScene(JSON.parse(JSON.stringify(serializeScene(A.ctx, { camera: false }))), B.ctx);
+  if (json(A.ctx) !== json(B.ctx) || Math.abs(B.figure.proportions.head - PROPORTIONS.chibi.head) > 1e-9) bad.push("save → load changed it");
+  fig.setProportions(PROPORTIONS.standard);
+  fig.resetPose();
+  if (json(A.ctx) !== standard) bad.push("Standard is not the standard figure any more");
+  check("proportions: on the floor, pose kept, saved, and reversible", !bad.length, bad.join("; "));
 }
 
 const out = document.getElementById("out");

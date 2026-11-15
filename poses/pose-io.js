@@ -5,7 +5,7 @@
 // props (type, colour, transform), custom lights, studio lights + background, imported-model placement, camera.
 // v1 files (joints as bare quaternions, props) — including the Starter Pack — still load.
 
-import { counterpartName } from "../character/character.js";
+import { counterpartName, PROPORTION_KEYS } from "../character/character.js";
 import { createProp, propColor } from "../core/world.js";
 import { createCustomLight, applyLightParams, lightParams } from "../lights/custom-lights.js";
 
@@ -27,16 +27,19 @@ function figureDoc(figure) {
   for (const j of figure.joints) {
     const e = { q: r5(j.quaternion.toArray()) };
     if (j.position.distanceToSquared(figure.restPosition(j.name)) > 1e-12) e.p = r5(j.position.toArray());
-    const s = j.userData.segment.scale;
-    if (Math.abs(s.x - 1) + Math.abs(s.y - 1) + Math.abs(s.z - 1) > 1e-6) e.s = r5(s.toArray());
+    const s = j.userData.segment.scale, s0 = figure.restScale.get(j.name);
+    if (Math.abs(s.x - s0.x) + Math.abs(s.y - s0.y) + Math.abs(s.z - s0.z) > 1e-6) e.s = r5(s.toArray());
     joints[j.name] = e;
   }
-  return { build: figure.build, skin: figure.skin, joints };
+  const doc = { build: figure.build, skin: figure.skin, joints };
+  if (!figure.isStandard()) doc.proportions = Object.fromEntries(PROPORTION_KEYS.map((k) => [k, figure.proportions[k]]));
+  return doc;
 }
 
 function applyFigure(figure, d) {
   if (d.build && d.build !== figure.build) figure.create(d.build);
   if (d.skin && d.skin !== figure.skin) figure.setSkin(d.skin);
+  if (d.proportions || !figure.isStandard()) figure.setProportions(d.proportions);
   figure.resetPose();
   for (const [name, v] of Object.entries(d.joints)) {
     const j = figure.joint(name);
@@ -56,6 +59,7 @@ export function serializeScene({ figure, figures = [figure], world, cameraState,
     version: 2,
     build: first.build,
     skin: first.skin,
+    ...(first.proportions ? { proportions: first.proportions } : {}),
     notes,
     joints: first.joints,
     props: world.live("prop").map((p) => ({ uid: p.userData.uid, type: p.userData.type, name: p.name, color: "#" + propColor(p).getHexString(), ...xform(p) })),

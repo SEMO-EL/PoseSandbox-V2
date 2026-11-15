@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Mannequin, BUILDS, SKINS, CHAINS, chainOf, jointLabel, counterpartName, loadSculpt } from "./character/character.js";
+import { Mannequin, BUILDS, SKINS, PROPORTIONS, PROPORTION_KEYS, CHAINS, chainOf, jointLabel, counterpartName, loadSculpt } from "./character/character.js";
 import { createRenderer } from "./engine/renderer.js";
 import { createScene, BACKGROUNDS, fovFromLens } from "./engine/scene.js";
 import { createLoop } from "./engine/loop.js";
@@ -118,7 +118,7 @@ function boot() {
     const f = new Mannequin(scene);
     f.skin = like ? like.skin : Object.keys(SKINS)[figures.length % Object.keys(SKINS).length]; // tell them apart at a glance
     f.create(like ? like.build : figure.build);
-    if (like) f.restore(like.capture());
+    if (like) { f.setProportions(like.proportions); f.restore(like.capture()); }
     f.root.position.x = Math.max(...figures.map((g) => g.root.position.x)) + 0.75;
     figures.push(f);
     return f;
@@ -902,6 +902,9 @@ function boot() {
   function syncFigureUI() {
     $("figBuild").value = figure.build;
     $("figSkin").value = figure.skin;
+    const P = figure.proportions;
+    $("figProp").value = Object.keys(PROPORTIONS).find((k) => PROPORTION_KEYS.every((x) => Math.abs(PROPORTIONS[k][x] - P[x]) < 1e-6)) || "custom";
+    for (const k of PROPORTION_KEYS) { $("pr_" + k).value = P[k]; $("pr_" + k).nextElementSibling.textContent = Math.round(P[k] * 100) + "%"; }
     $("figCount").textContent = figures.length > 1 ? `${figureName(figure)} of ${figures.length} selected` : "One figure";
     $("btnRemoveFigure").disabled = figures.length < 2;
     fillJointSelect();
@@ -976,7 +979,7 @@ function boot() {
   $("btnResetPart").addEventListener("click", () => {
     const j = selection.get();
     if (!j?.userData.isJoint) return;
-    poseAction(() => { j.quaternion.identity(); j.userData.segment.scale.set(1, 1, 1); j.position.copy(figure.restPosition(j.name)); });
+    poseAction(() => { j.quaternion.identity(); j.userData.segment.scale.copy(figure.restScale.get(j.name)); j.position.copy(figure.restPosition(j.name)); });
   });
   $("btnDuplicate").addEventListener("click", duplicateSelected);
   $("btnDelete").addEventListener("click", deleteSelected);
@@ -1019,6 +1022,21 @@ function boot() {
     commit();
   });
   $("figSkin").addEventListener("change", (e) => { figure.setSkin(e.target.value); invalidate(); commit(); });
+  for (const [k, v] of Object.entries(PROPORTIONS)) $("figProp").append(new Option(v.label, k));
+  $("figProp").append(new Option("Custom", "custom"));
+  const proportion = (p, done) => {
+    figure.setProportions(p);
+    figure.ground();
+    selection.repaint();
+    syncFigureUI();
+    attachGizmo();
+    if (done) commit();
+  };
+  $("figProp").addEventListener("change", (e) => { if (PROPORTIONS[e.target.value]) proportion(PROPORTIONS[e.target.value], true); });
+  for (const k of PROPORTION_KEYS) {
+    $("pr_" + k).addEventListener("input", (e) => proportion({ ...figure.proportions, [k]: Number(e.target.value) }));
+    $("pr_" + k).addEventListener("change", commit);
+  }
   $("btnAddFigure").addEventListener("click", () => newFigure());
   $("btnRemoveFigure").addEventListener("click", dropFigure);
   $("bgTone").addEventListener("change", (e) => { setBackground(e.target.value); commit(); });
@@ -1259,5 +1277,13 @@ function boot() {
       return [Math.round((v.x + 1) / 2 * canvas.clientWidth), Math.round((1 - v.y) / 2 * canvas.clientHeight)];
     }
   };
+  // first visit: three pointers, once
+  const tipsKey = "posesandbox_tips";
+  let seenTips = true;
+  try { seenTips = !!localStorage.getItem(tipsKey); } catch { /* storage blocked: no tips */ }
+  if (!seenTips && !restored) {
+    $("tips").hidden = false;
+    $("btnTips").addEventListener("click", () => { $("tips").hidden = true; try { localStorage.setItem(tipsKey, "1"); } catch { /* ignore */ } });
+  }
   requestAnimationFrame(() => { makePresetThumbs(); if (location.hash.startsWith("#p=")) openShared(); else if (restored) toast("Welcome back — your last scene is restored", 2200); });
 }

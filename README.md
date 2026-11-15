@@ -9,7 +9,8 @@ Live site: <https://semo-el.github.io/PoseSandbox-V2/> · editor: `app.html` · 
 
 - **Pose by dragging.** A hand or foot pulls its limb (IK), the pelvis moves the body over planted feet, the floor
   ring slides the figure, any other part swings about its joint. A gizmo (Rotate / Move / Scale) for exact work.
-- **Several figures** in one scene (up to six), each with its own pose, build and material.
+- **Several figures** in one scene (up to six), each with its own pose, build, material and **proportions**
+  (Standard, Heroic, Slender, Stocky, Teen, Child, Chibi, or your own with five sliders).
 - **46 library poses** in four groups, 7 hand shapes, mirror, symmetry, random, undo for everything.
 - **Looks:** Shaded, Values (four flat tones), Ink (line art), Silhouette. **Flip** the view. **Framing guides**
   (thirds, 1:1, 4:5, A4, 16:9 …). Export gives what you see, at 1×, 2× or 4×, optionally transparent.
@@ -31,7 +32,7 @@ Everything is static files. Any web server works; this one never caches, so an e
 
 Needs Python with `playwright` (and `pillow` for the pose sheet). With the server above running:
 
-    python tests/run_selfcheck.py     # logic: IK, save/load, mirror, undo, presets on the floor, hinges  (18 checks)
+    python tests/run_selfcheck.py     # logic: IK, save/load, mirror, undo, presets on the floor, hinges, proportions  (19 checks)
     python tests/smoke.py             # the real editor in headless Chromium: drag, figures, looks, practice, links (16 checks)
 
 Both print one line per check and exit non-zero on a failure. Not covered by tests: real phones and touch,
