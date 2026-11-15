@@ -190,6 +190,7 @@ fieldset { border: 0; padding: 0; margin: 0; }
   .vbtn span, .vbtn kbd { display: none; }
   .vopts { top: 62px; left: 50%; transform: translateX(-50%); }
   .vopts .vbtn span { display: none; }
+  .is-practice .vopts { top: 80px; }
   .vhint { bottom: 64px; }
   .toast { bottom: 100px; }
 }

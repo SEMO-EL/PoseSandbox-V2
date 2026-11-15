@@ -12,6 +12,9 @@ export function createGrab({ canvas, camera, orbit, gizmo, selection, start, end
   const n = new THREE.Vector3(), p = new THREE.Vector3();
   let g = null;
 
+  // a second finger before the drag has started means pinch or pan: let the orbit have both fingers
+  canvas.addEventListener("pointerdown", (e) => { if (g && !g.live && e.pointerId !== g.id) { g = null; orbit.enabled = true; } }, true);
+
   // registered after the gizmo's and the orbit's own listeners, so gizmo.axis is already known for this press
   canvas.addEventListener("pointerdown", (e) => {
     if (g || !e.isPrimary || e.button !== 0 || gizmo.axis !== null || gizmo.dragging) return;

@@ -787,6 +787,8 @@ function boot() {
   function makePresetThumbs() {
     const keep = figure.capture();
     const cam = S.cameraState();
+    const light = envState(); // thumbnails are lit plainly, whatever the scene's lighting is
+    S.setKeyDirection(S.applyLightingPreset("studio"));
     const hidden = [...world.live(), ...figures.filter((f) => f !== figure).map((f) => f.root)].filter((o) => o.visible);
     hidden.forEach((o) => (o.visible = false));
     figure.root.position.set(0, 0, 0);
@@ -800,6 +802,7 @@ function boot() {
       }
     } finally {
       figure.restore(keep);
+      setEnvState(light);
       S.setCameraState(cam);
       hidden.forEach((o) => (o.visible = true));
       invalidate();

@@ -134,13 +134,14 @@ export function mirrorQuaternion(q, out) {
   return out.set(q.x, -q.y, -q.z, q.w);
 }
 
-/** Swap left and right for the whole figure. */
+/** Swap left and right for the whole figure, where it stands (its place and facing in the scene don't change). */
 export function mirrorPose(figure) {
   const snap = new Map(figure.joints.map((j) => [j.name, { q: j.quaternion.clone(), p: j.position.clone(), s: j.userData.segment.scale.clone() }]));
   for (const j of figure.joints) {
+    if (j.name === "char_root") continue;
     const src = snap.get(counterpartName(j.name) || j.name);
     mirrorQuaternion(src.q, j.quaternion);
     j.userData.segment.scale.copy(src.s);
-    if (!counterpartName(j.name)) j.position.set(-src.p.x, src.p.y, src.p.z); // centre joints (root, hips) may be moved
+    if (!counterpartName(j.name)) j.position.set(-src.p.x, src.p.y, src.p.z); // the hips may have been moved off centre
   }
 }

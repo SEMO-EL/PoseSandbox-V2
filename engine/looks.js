@@ -106,6 +106,7 @@ export function createLooks(renderer) {
       renderer.clear();
       renderer.render(quad, quadCam);
       renderer.autoClear = false;
+      renderer.shadowMap.autoUpdate = false; // the shadows were drawn a moment ago
       camera.layers.set(HELPERS);
       scene.background = null;
       renderer.render(scene, camera);
@@ -114,6 +115,7 @@ export function createLooks(renderer) {
       if (gridWas) [grid.visible, grid.material.transparent, grid.material.opacity] = gridWas;
       renderer.setRenderTarget(null);
       renderer.autoClear = auto;
+      renderer.shadowMap.autoUpdate = true;
       camera.layers.mask = mask;
       scene.background = bg; scene.fog = fog;
     }
