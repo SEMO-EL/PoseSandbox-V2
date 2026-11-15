@@ -42,6 +42,7 @@
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
       <symbol id="i-next" viewBox="0 0 24 24"><path d="m6 5 9 7-9 7zM18 5v14"/></symbol>
       <symbol id="i-prev" viewBox="0 0 24 24"><path d="m18 5-9 7 9 7zM6 5v14"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
     </defs>
   </svg>
@@ -147,8 +148,8 @@
           <summary>Lighting</summary>
           <div class="stack">
             <div class="grid2">
-              <label class="field"><span class="label">Studio preset</span><select id="lightPreset" class="select"><option value="studio">Studio</option><option value="flat">Flat</option><option value="moody">Moody</option><option value="rim">Rim</option><option value="sunset">Sunset</option></select></label>
-              <label class="field"><span class="label">Key from</span><select id="keyDir" class="select"><option value="front_right">Front right</option><option value="front_left">Front left</option><option value="front">Front</option><option value="left">Side left</option><option value="right">Side right</option><option value="top">Top</option><option value="back_right">Back right</option><option value="back_left">Back left</option></select></label>
+              <label class="field"><span class="label">Studio preset</span><select id="lightPreset" class="select"><optgroup label="Studio"><option value="studio">Studio</option><option value="flat">Flat</option><option value="moody">Moody</option><option value="rim">Rim</option><option value="sunset">Sunset</option></optgroup><optgroup label="Portrait patterns"><option value="rembrandt">Rembrandt</option><option value="loop">Loop</option><option value="butterfly">Butterfly</option><option value="split">Split</option><option value="backlit">Backlit</option><option value="under">From below</option><option value="noon">High noon</option></optgroup></select></label>
+              <label class="field"><span class="label">Key from</span><select id="keyDir" class="select"><option value="front_right">Front right</option><option value="front_left">Front left</option><option value="front">Front</option><option value="left">Side left</option><option value="right">Side right</option><option value="top">Top</option><option value="back_right">Back right</option><option value="back_left">Back left</option><option value="high_side">High side</option><option value="back">Behind</option><option value="below">Below</option></select></label>
             </div>
             <div id="studioRows" class="stack stack--tight"></div>
 
@@ -210,6 +211,7 @@
             <label class="field"><span class="label">Notes (saved with the pose)</span><textarea id="poseNotes" class="textarea" rows="2" placeholder="e.g. hero pose, low angle"></textarea></label>
             <button class="btn btn--primary" id="btnSaveGallery" type="button">Save to gallery <kbd>Ctrl S</kbd></button>
             <div class="grid2"><button class="btn" id="btnSaveFile" type="button">Save file (.json)</button><button class="btn" id="btnOpenFile" type="button">Open files</button></div>
+            <button class="btn" id="btnShare" type="button" title="The whole scene, packed into a link"><svg><use href="#i-link"/></svg>Copy a link to this scene</button>
             <input id="filePose" type="file" accept=".json,application/json" multiple hidden />
             <div class="tiles" id="poseGallery" aria-label="Saved poses"></div>
             <div class="grid3"><button class="btn" id="btnRename" type="button">Rename</button><button class="btn" id="btnDeletePose" type="button">Delete</button><button class="btn" id="btnExportGallery" type="button">Export all</button></div>
@@ -326,7 +328,7 @@
         <tr><td><kbd>Ctrl S</kbd> · <kbd>Ctrl E</kbd></td><td>Save to gallery · Export</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Deselect</td></tr>
       </table>
-      <p class="hint">Your work is kept in this browser between visits. Use “Save file” or “Export all” for a backup.</p>
+      <p class="hint">Your work is kept in this browser between visits. Use “Save file” or “Export all” for a backup, or “Copy a link” to send a scene to someone.</p>
     </div>
   </dialog>
 

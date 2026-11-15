@@ -20,7 +20,7 @@ def check(name, ok, detail=""):
 async def main():
     async with async_playwright() as p:
         br = await p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
-        ctx = await br.new_context(viewport={"width": 1400, "height": 900}, accept_downloads=True)
+        ctx = await br.new_context(viewport={"width": 1400, "height": 900}, accept_downloads=True, permissions=["clipboard-read", "clipboard-write"])
         pg = await ctx.new_page()
         errors = []
         pg.on("pageerror", lambda e: errors.append(str(e)))
@@ -162,6 +162,18 @@ async def main():
         after = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
         off = await pg.evaluate("!document.body.classList.contains('is-practice') && document.getElementById('practice').hidden")
         check("practice: new poses on demand, back returns the same pose, the scene is restored", on and off and first != second and back == first and count.startswith("2 /") and after == mine, f"count={count} restored={after == mine}")
+
+        # share link: copy it, change the pose, open the link: the shared pose is back
+        shared = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        await pg.evaluate("document.getElementById('btnShare').click()")
+        await pg.wait_for_timeout(500)
+        link = await pg.evaluate("navigator.clipboard.readText()")
+        await pg.evaluate("[...document.querySelectorAll('#presetGrid .tile')].find((t) => t.textContent === 'Archer').click()")
+        changed = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        await pg.evaluate("(u) => { location.hash = u.slice(u.indexOf('#')); }", link)
+        await pg.wait_for_timeout(600)
+        reopened = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        check("a copied link reopens the scene", "#p=z" in link and changed != shared and reopened == shared and not await pg.evaluate("location.hash"), f"link is {len(link)} characters")
 
         check("no page errors", not errors, "; ".join(errors[:3]))
 

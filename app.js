@@ -11,6 +11,7 @@ import { createReference } from "./engine/reference.js";
 import { createWorld, createProp, propColor, markImport, PROP_TYPES } from "./core/world.js";
 import { createHistory } from "./core/history.js";
 import { isTypingTarget, stamp, downloadBlob, makeToast } from "./core/helpers.js";
+import { encodeShare, decodeShare } from "./core/share.js";
 import { createCustomLight, applyLightParams, lightParams, MAX_LIGHTS } from "./lights/custom-lights.js";
 import { solveTwoBone, holdWorldRotation, aim } from "./controls/ik.js";
 import { createGrab } from "./controls/grab.js";
@@ -1110,6 +1111,18 @@ function boot() {
     downloadBlob(gallery.exportBlob(), stamp("posesandbox-gallery") + ".json");
   });
   $("poseNotes").addEventListener("input", saveSessionSoon);
+  $("btnShare").addEventListener("click", async () => {
+    const doc = serializeScene(ctx, { notes: notes() });
+    for (const list of [doc.props, doc.lights]) for (const it of list) delete it.uid; // ids only matter for undo
+    delete doc.imports;
+    const url = location.origin + location.pathname + "#p=" + (await encodeShare(doc));
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(world.live("import").length ? "Link copied — imported models don't travel in links" : "Link copied — anyone who opens it gets this scene", 2600);
+    } catch {
+      prompt("Copy this link:", url);
+    }
+  });
 
   $("btnImport3D").addEventListener("click", () => $("fileModel").click());
   $("fileModel").addEventListener("change", async (e) => { if (e.target.files[0]) await importModel(e.target.files[0]); e.target.value = ""; });
@@ -1206,6 +1219,19 @@ function boot() {
     applyPreset(figure, PRESETS[0]);
     frameFigure();
   }
+  // a shared link (#p=…) opens over whatever was here; the previous scene stays one Ctrl+Z away
+  const openShared = async () => {
+    const m = location.hash.match(/^#p=(.+)$/);
+    if (!m) return;
+    window.history.replaceState(null, "", location.pathname + location.search); // (`history` here is the undo stack)
+    try {
+      const r = loadDoc(await decodeShare(m[1]));
+      $("poseNotes").value = r.notes || "";
+      commit();
+      toast("Opened a shared pose — Ctrl+Z goes back to yours", 2600);
+    } catch { toast("That link doesn't hold a PoseSandbox pose", 2600); }
+  };
+  window.addEventListener("hashchange", openShared);
   syncFigureUI();
   syncLensUI();
   renderLightList();
@@ -1227,5 +1253,5 @@ function boot() {
       return [Math.round((v.x + 1) / 2 * canvas.clientWidth), Math.round((1 - v.y) / 2 * canvas.clientHeight)];
     }
   };
-  requestAnimationFrame(() => { makePresetThumbs(); if (restored) toast("Welcome back — your last scene is restored", 2200); });
+  requestAnimationFrame(() => { makePresetThumbs(); if (location.hash.startsWith("#p=")) openShared(); else if (restored) toast("Welcome back — your last scene is restored", 2200); });
 }

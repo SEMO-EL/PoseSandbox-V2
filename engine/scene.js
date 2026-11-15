@@ -30,12 +30,21 @@ export const LIGHT_PRESETS = {
   flat:   { hemi: [0xffffff, 0xffffff, 0.35], ambient: [0xffffff, 1.4], key: [0xffffff, 0.8, "front"], fill: [0xffffff, 0.6], rim: [0xffffff, 0.1] },
   moody:  { hemi: [0x6a7cff, 0x0b0f17, 0.2], ambient: [0xffffff, 0.08], key: [0xfff1dd, 3.0, "front_left"], fill: [0x5aa0ff, 0.25], rim: [0x9fd7ff, 1.2] },
   rim:    { hemi: [0x9bb2ff, 0x151a22, 0.15], ambient: [0xffffff, 0.08], key: [0xffffff, 1.0, "back_right"], fill: [0x88bbff, 0.2], rim: [0xe6f6ff, 2.6] },
-  sunset: { hemi: [0xffb27a, 0x2a1622, 0.45], ambient: [0xffd2b0, 0.15], key: [0xffa05a, 2.6, "left"], fill: [0x6b7dff, 0.5], rim: [0xffd6a0, 1.0] }
+  sunset: { hemi: [0xffb27a, 0x2a1622, 0.45], ambient: [0xffd2b0, 0.15], key: [0xffa05a, 2.6, "left"], fill: [0x6b7dff, 0.5], rim: [0xffd6a0, 1.0] },
+  // the classic portrait patterns, named for the shadow the key light leaves on the face
+  rembrandt: { hemi: [0x9bb2ff, 0x151a22, 0.12], ambient: [0xffffff, 0.05], key: [0xfff4e6, 3.2, "high_side"], fill: [0x88bbff, 0.12], rim: [0xaad9ff, 0.35] },
+  loop:      { hemi: [0x9bb2ff, 0x151a22, 0.3], ambient: [0xffffff, 0.12], key: [0xffffff, 2.8, "front_right"], fill: [0x88bbff, 0.35], rim: [0xaad9ff, 0.5] },
+  butterfly: { hemi: [0xffffff, 0x1a1a22, 0.25], ambient: [0xffffff, 0.1], key: [0xffffff, 3.0, "front"], fill: [0xffffff, 0.15], rim: [0xffffff, 0.3] },
+  split:     { hemi: [0x9bb2ff, 0x151a22, 0.06], ambient: [0xffffff, 0.03], key: [0xffffff, 3.2, "right"], fill: [0x88bbff, 0.0], rim: [0xaad9ff, 0.15] },
+  backlit:   { hemi: [0x9bb2ff, 0x151a22, 0.2], ambient: [0xffffff, 0.04], key: [0xfff0dd, 3.4, "back"], fill: [0x88bbff, 0.1], rim: [0xe6f6ff, 1.6] },
+  under:     { hemi: [0x6a7cff, 0x0b0f17, 0.08], ambient: [0xffffff, 0.03], key: [0xffe2c0, 2.8, "below"], fill: [0x5aa0ff, 0.1], rim: [0x9fd7ff, 0.5] },
+  noon:      { hemi: [0xbfd8ff, 0x4a3f33, 0.6], ambient: [0xffffff, 0.12], key: [0xfffbf0, 3.4, "top"], fill: [0xffffff, 0.1], rim: [0xffffff, 0.2] }
 };
 
 const KEY_DIRS = {
   front_right: [3, 5, 2.4], front_left: [-3, 5, 2.4], front: [0, 5, 3.6], left: [-4.5, 2.6, 0.6],
-  right: [4.5, 2.6, 0.6], top: [0, 6, 0.01], back_right: [3, 4, -3.5], back_left: [-3, 4, -3.5]
+  right: [4.5, 2.6, 0.6], top: [0, 6, 0.01], back_right: [3, 4, -3.5], back_left: [-3, 4, -3.5],
+  high_side: [3.6, 5.2, 1.6], back: [0.4, 3.6, -4.6], below: [0.9, -1.4, 3.2]
 };
 
 export function createScene({ renderer, canvas }) {
