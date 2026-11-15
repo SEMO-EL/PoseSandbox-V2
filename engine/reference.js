@@ -25,7 +25,7 @@ export function createReference(camera) {
     if (mat.transparent === state.behind) { mat.transparent = !state.behind; mat.needsUpdate = true; }
     mat.opacity = state.behind ? 1 : state.opacity;
     mat.color.setScalar(state.behind ? state.opacity : 1);
-    mat.depthTest = false;
+    mat.depthTest = state.behind; // behind: anything nearer covers it, also when it is drawn after the figure (engine/looks.js)
     mesh.renderOrder = state.behind ? -10 : 9999;
     mesh.visible = state.enabled && !!mat.map;
   }

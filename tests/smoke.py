@@ -113,6 +113,37 @@ async def main():
         moved = await pg.evaluate("window.__ps.screenOf('l_wrist')")
         check("dragging a hand pulls the arm", sel == "Right hand" and abs(moved[0] - (hx - 60)) < 12 and abs(moved[1] - (hy - 90)) < 12, f"{sel}, hand at {moved} from {[hx, hy]}")
 
+        # looks: the ink picture is white paper with dark lines; a square guide crops the export; flip mirrors it
+        await pg.select_option("#lookSelect", "ink")
+        await pg.select_option("#guideSelect", "1:1")
+        ink = await pg.evaluate("""(async () => {
+            const im = new Image(); im.src = window.__ps.exportUrl(); await im.decode();
+            const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+            const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data;
+            let white = 0, dark = 0, left = 0, right = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i] > 240) white++;
+                else if (d[i] < 60) { dark++; ((i / 4) % c.width < c.width / 2) ? left++ : right++; }
+            }
+            return { w: c.width, h: c.height, white: white / (d.length / 4), dark: dark / (d.length / 4), left, right };
+        })()""")
+        check("Ink look exports line art, cropped square", ink["w"] == ink["h"] and ink["white"] > 0.7 and 0.002 < ink["dark"] < 0.2, str(ink))
+        await pg.click("#btnFlip")
+        flipped = await pg.evaluate("""(async () => {
+            const im = new Image(); im.src = window.__ps.exportUrl(); await im.decode();
+            const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+            const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data;
+            let left = 0, right = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i] < 60) ((i / 4) % c.width < c.width / 2) ? left++ : right++;
+            return { left, right };
+        })()""")
+        check("Flip mirrors the export", abs(flipped["left"] - ink["right"]) < 0.05 * max(1, ink["right"]) and ink["left"] != ink["right"], f"before L{ink['left']} R{ink['right']}, after L{flipped['left']} R{flipped['right']}")
+        await pg.click("#btnFlip")
+        await pg.select_option("#lookSelect", "shaded")
+        await pg.select_option("#guideSelect", "none")
+
         check("no page errors", not errors, "; ".join(errors[:3]))
 
         # phone: the view fills the screen, no sideways scroll

@@ -6,6 +6,7 @@ import { Mannequin, BUILDS, SKINS, CHAINS, chainOf, jointLabel, counterpartName,
 import { createRenderer } from "./engine/renderer.js";
 import { createScene, BACKGROUNDS, fovFromLens } from "./engine/scene.js";
 import { createLoop } from "./engine/loop.js";
+import { createLooks, LOOKS } from "./engine/looks.js";
 import { createReference } from "./engine/reference.js";
 import { createWorld, createProp, propColor, markImport, PROP_TYPES } from "./core/world.js";
 import { createHistory } from "./core/history.js";
@@ -41,7 +42,12 @@ function boot() {
   const { renderer, resize } = createRenderer(canvas);
   const S = createScene({ renderer, canvas });
   const { scene, camera, orbit, gizmo, floor } = S;
-  const loop = createLoop({ renderer, scene, camera, orbit });
+  const looks = createLooks(renderer);
+  const draw = () => looks.render(scene, camera, { hide: [floor], grid: S.grid() });
+  const loop = createLoop({ renderer, scene, camera, orbit, render: draw });
+  camera.layers.enable(looks.HELPERS);
+  gizmo.getRaycaster().layers.enable(looks.HELPERS);
+  const view = { look: "shaded", flip: false, guide: "none" }; // how the picture is shown; kept per browser, not in pose files
   const invalidate = loop.invalidate;
   // the cast: `figure` is the one the panel edits (the active one); selecting a part of another makes that one active
   const figures = [new Mannequin(scene).create(Mannequin.sculpt ? "sculpted" : "neutral")];
@@ -162,6 +168,44 @@ function boot() {
 
   /* ------------------------------------------------------------ selection + gizmo */
 
+  /* ------------------------------------------------------------ the picture: look, flip, framing guide */
+
+  const GUIDES = { none: ["No guide", 0], thirds: ["Thirds", 0], "1:1": ["Square 1:1", 1], "4:5": ["Portrait 4:5", 4 / 5], "3:4": ["Portrait 3:4", 3 / 4], "2:3": ["Portrait 2:3", 2 / 3], a4: ["A4 portrait", 1 / Math.SQRT2], "9:16": ["Story 9:16", 9 / 16], "3:2": ["Landscape 3:2", 3 / 2], "16:9": ["Wide 16:9", 16 / 9] };
+
+  /** The framing guide's rectangle inside the view (CSS px), or null when the guide has no shape of its own. */
+  function frameRect() {
+    const ratio = GUIDES[view.guide]?.[1];
+    if (!ratio) return null;
+    const W = canvas.clientWidth, H = canvas.clientHeight, pad = 0.94;
+    let w = W * pad, h = w / ratio;
+    if (h > H * pad) { h = H * pad; w = h * ratio; }
+    return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  }
+
+  function applyView() {
+    view.look = looks.set(view.look);
+    $("lookSelect").value = view.look;
+    $("guideSelect").value = GUIDES[view.guide] ? view.guide : (view.guide = "none");
+    $("btnFlip").classList.toggle("is-on", view.flip);
+    $("btnFlip").setAttribute("aria-pressed", String(view.flip));
+    canvas.classList.toggle("is-flipped", view.flip);
+    const g = $("guide"), f = frameRect();
+    g.hidden = view.guide === "none";
+    g.classList.toggle("guide--frame", !!f);
+    Object.assign(g.style, f ? { left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" } : { left: "0", top: "0", width: "100%", height: "100%" });
+    try { localStorage.setItem("posesandbox_view", JSON.stringify(view)); } catch { /* ignore */ }
+    invalidate();
+  }
+
+  // Flip mirrors the canvas with CSS; the pointer is mirrored to match, so everything under it still lines up.
+  for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
+    window.addEventListener(type, (e) => {
+      if (!view.flip || e.target !== canvas) return;
+      const r = canvas.getBoundingClientRect();
+      for (const k of ["clientX", "pageX", "x"]) Object.defineProperty(e, k, { value: r.left + r.right - e[k], configurable: true });
+    }, true);
+  }
+
   const selection = new Selection({
     camera, canvas, gizmo,
     getRoots: () => [...figures.map((f) => f.root), ...world.live()],
@@ -174,6 +218,7 @@ function boot() {
     resolveHit: (hit) => { for (const f of figures) { const j = f.jointForHit(hit); if (j) return j; } return null; },
     paintJoints: (sel, hov) => { for (const f of figures) f.paintJoints(sel?.userData.figure === f ? sel : null, hov?.userData.figure === f ? hov : null); }
   });
+  selection.ray.layers.enable(looks.HELPERS);
 
   const fingerName = (n) => (figure.fingerBlock ? n.replace("index finger", "fingers") : n); // one fused finger block on the sculpt
   const figureName = (f) => `Figure ${figures.indexOf(f) + 1}`;
@@ -432,7 +477,9 @@ function boot() {
 
   /* ------------------------------------------------------------ clean renders: export + thumbnails */
 
-  function cleanRender({ scale = 1, transparent = false, grid = false, floorOn = true, ref = false } = {}, read) {
+  function cleanRender({ scale = 1, transparent = false, grid = false, floorOn = true, ref = false, styled = false } = {}, read) {
+    const look = looks.get();
+    if (!styled) looks.set("shaded"); // thumbnails are always plain
     const changed = [];
     const vis = (o, v) => { if (o && o.visible !== v) { changed.push([o, o.visible]); o.visible = v; } };
     const gridShown = S.grid().visible;
@@ -447,8 +494,9 @@ function boot() {
     const k = Math.min(scale, 8192 / Math.max(w, h));
     if (k !== 1) renderer.setPixelRatio(pr * k);
     try {
-      return selection.withoutHighlights(() => { renderer.render(scene, camera); return read(renderer.domElement); });
+      return selection.withoutHighlights(() => { draw(); return read(renderer.domElement); });
     } finally {
+      looks.set(look);
       if (k !== 1) renderer.setPixelRatio(pr);
       scene.background = bg; scene.fog = fog; floor.material = floorMat;
       for (const [o, v] of changed.reverse()) o.visible = v;
@@ -469,7 +517,7 @@ function boot() {
 
   function exportOptions() {
     const f = $("exportDialog").querySelector("form");
-    return { scale: Number(f.scale.value), transparent: f.transparent.checked, floorOn: f.floor.checked, grid: f.grid.checked, ref: f.reference.checked };
+    return { scale: Number(f.scale.value), transparent: f.transparent.checked, floorOn: f.floor.checked, grid: f.grid.checked, ref: f.reference.checked, styled: true };
   }
 
   function updateExportSize() {
@@ -477,11 +525,27 @@ function boot() {
     const { scale } = exportOptions();
     const w = canvas.clientWidth * pr, h = canvas.clientHeight * pr;
     const k = Math.min(scale, 8192 / Math.max(w, h));
-    $("exportSize").textContent = `${Math.round(w * k)} × ${Math.round(h * k)} px · the current view`;
+    const f = frameRect();
+    const note = [f ? `cropped to ${GUIDES[view.guide][0]}` : "the current view", view.look !== "shaded" ? LOOKS[view.look] : "", view.flip ? "flipped" : ""].filter(Boolean).join(" · ");
+    $("exportSize").textContent = `${Math.round((f ? f.w * pr : w) * k)} × ${Math.round((f ? f.h * pr : h) * k)} px · ${note}`;
+  }
+
+  /** The exported picture is what you see: cropped to the framing guide and flipped if the view is. */
+  function finishExport(src) {
+    const f = frameRect();
+    if (!f && !view.flip) return src;
+    const k = src.width / canvas.clientWidth;
+    const r = f ? { x: Math.round(f.x * k), y: Math.round(f.y * k), w: Math.round(f.w * k), h: Math.round(f.h * k) } : { x: 0, y: 0, w: src.width, h: src.height };
+    const c = document.createElement("canvas");
+    c.width = r.w; c.height = r.h;
+    const g = c.getContext("2d");
+    if (view.flip) { g.translate(r.w, 0); g.scale(-1, 1); }
+    g.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    return c;
   }
 
   async function exportBlob() {
-    const url = cleanRender(exportOptions(), (c) => c.toDataURL("image/png"));
+    const url = cleanRender(exportOptions(), (c) => finishExport(c).toDataURL("image/png"));
     return (await fetch(url)).blob();
   }
 
@@ -885,6 +949,13 @@ function boot() {
   $("togAxes").addEventListener("change", (e) => { S.axes.visible = e.target.checked; invalidate(); });
   $("togHighlight").addEventListener("change", (e) => { selection.enabled = e.target.checked; selection.repaint(); invalidate(); });
   let perfTimer = 0;
+  for (const [k, label] of Object.entries(LOOKS)) $("lookSelect").append(new Option(label, k));
+  for (const [k, [label]] of Object.entries(GUIDES)) $("guideSelect").append(new Option(label, k));
+  $("lookSelect").disabled = !looks.available;
+  $("lookSelect").addEventListener("change", (e) => { view.look = e.target.value; applyView(); });
+  $("guideSelect").addEventListener("change", (e) => { view.guide = e.target.value; applyView(); });
+  const toggleFlip = () => { view.flip = !view.flip; applyView(); toast(view.flip ? "Flipped — a fresh eye on the pose" : "Flip off", 1100); };
+  $("btnFlip").addEventListener("click", toggleFlip);
   $("togPerf").addEventListener("change", (e) => {
     $("perf").hidden = !e.target.checked;
     clearInterval(perfTimer);
@@ -1028,6 +1099,8 @@ function boot() {
     if (e.altKey) return;
     if (["1", "2", "3", "4"].includes(k)) setMode(["rotate", "move", "view", "scale"][Number(k) - 1]);
     else if (k === "f") frameSelection();
+    else if (k === "h") toggleFlip();
+    else if (k === "l") { const ks = Object.keys(LOOKS); view.look = ks[(ks.indexOf(view.look) + 1) % ks.length]; applyView(); toast(LOOKS[view.look], 900); }
     else if (k === "escape") selection.set(null);
     else if (k === "delete" || k === "backspace") { if (selection.get() && !selection.get().userData.isJoint) { e.preventDefault(); deleteSelected(); } }
     else if (k === "[") selectRelative(-1);
@@ -1037,12 +1110,14 @@ function boot() {
 
   // any panel interaction may change the picture
   for (const type of ["input", "change", "click"]) document.addEventListener(type, invalidate, true);
-  new ResizeObserver(() => { resize(camera); reference.update(); invalidate(); }).observe(vp);
+  new ResizeObserver(() => { resize(camera); reference.update(); applyView(); }).observe(vp);
   resize(camera);
   window.addEventListener("pagehide", saveSession);
 
   /* ------------------------------------------------------------ start */
 
+  try { Object.assign(view, JSON.parse(localStorage.getItem("posesandbox_view") || "{}")); } catch { /* ignore */ }
+  applyView();
   syncStudioUI();
   syncReferenceUI();
   gallery.load();
@@ -1073,6 +1148,7 @@ function boot() {
   loop.start();
   // for the tests: where a joint of the active figure is on the canvas (CSS px)
   window.__ps = {
+    exportUrl: () => cleanRender(exportOptions(), (c) => finishExport(c).toDataURL("image/png")),
     screenOf: (name) => {
       const v = figure.joint(name).getWorldPosition(new THREE.Vector3()).project(camera);
       return [Math.round((v.x + 1) / 2 * canvas.clientWidth), Math.round((1 - v.y) / 2 * canvas.clientHeight)];

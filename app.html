@@ -37,6 +37,7 @@
       <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-flip" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M8 7 3 12l5 5V7zM16 7l5 5-5 5V7z"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
     </defs>
   </svg>
@@ -223,6 +224,14 @@
         <span class="vsep" aria-hidden="true"></span>
         <button class="vbtn" id="btnFocusBar" type="button" title="Frame selection (F)"><svg><use href="#i-focus"/></svg><span>Frame</span></button>
       </div>
+      <div class="vopts" role="group" aria-label="Picture">
+        <label class="sr-only" for="lookSelect">Look</label>
+        <select id="lookSelect" class="select select--sm" title="How the picture is drawn (L)"></select>
+        <button class="vbtn" id="btnFlip" type="button" aria-pressed="false" title="Flip the view left ↔ right (H)"><svg><use href="#i-flip"/></svg><span>Flip</span></button>
+        <label class="sr-only" for="guideSelect">Framing guide</label>
+        <select id="guideSelect" class="select select--sm" title="Framing guide — Export crops to it"></select>
+      </div>
+      <div class="guide" id="guide" hidden></div>
       <p class="vhint" id="vhint">Drag a body part to pose it · drag empty space to orbit · scroll to zoom</p>
       <div class="perf" id="perf" hidden></div>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -262,12 +271,14 @@
         <li><b>Add figure</b> (Figure &amp; scene) puts another mannequin in the scene; each has its own pose, build and material.</li>
         <li><b>Rotate</b> turns the selected joint. <b>Move</b> on a hand or foot bends the whole limb (IK); on the body it moves the hips with the feet planted; the ring on the floor moves the whole figure.</li>
         <li>Add <b>point and spot lights</b> in Lighting, then place them with Move and aim spots with Rotate.</li>
-        <li><b>Export</b> gives a clean PNG (no gizmo) at 1×, 2× or 4×, optionally transparent.</li>
+        <li><b>Look</b> (top right) redraws the picture as flat <b>Values</b>, <b>Ink</b> line art or a <b>Silhouette</b>; <b>Flip</b> mirrors the view; a <b>framing guide</b> shows the crop.</li>
+        <li><b>Export</b> gives a clean PNG (no gizmo) of what you see — look, flip and crop included — at 1×, 2× or 4×, optionally transparent.</li>
       </ul>
       <table class="keys">
         <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Rotate · Move · View · Scale</td></tr>
         <tr><td><kbd>Ctrl Z</kbd> / <kbd>Ctrl Shift Z</kbd></td><td>Undo / redo</td></tr>
         <tr><td><kbd>F</kbd></td><td>Frame the selection</td></tr>
+        <tr><td><kbd>L</kbd> · <kbd>H</kbd></td><td>Next look · Flip the view</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Select the parent / child joint</td></tr>
         <tr><td><kbd>Ctrl M</kbd></td><td>Symmetry on/off</td></tr>
         <tr><td><kbd>Ctrl D</kbd></td><td>Duplicate the figure, prop or light</td></tr>

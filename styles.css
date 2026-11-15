@@ -116,11 +116,20 @@ input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px sol
 /* viewport */
 .viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
-.vbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(13,19,32,0.82); border: 1px solid var(--line2); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+.vbar { position: absolute; top: 12px; left: 12px; display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(13,19,32,0.82); border: 1px solid var(--line2); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
 .vbtn { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 10px; border-color: transparent; background: transparent; font-weight: 600; font-size: 12.5px; }
 .vbtn.is-on { background: rgba(124,92,255,0.22); border-color: rgba(124,92,255,0.6); }
 .vbtn kbd { padding: 2px 4px; font-size: 10px; }
 .vsep { width: 1px; background: var(--line2); margin: 4px 2px; }
+.vopts { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; align-items: center; padding: 5px; border-radius: 12px; background: rgba(13,19,32,0.82); border: 1px solid var(--line2); backdrop-filter: blur(10px); }
+.vopts .select { background: transparent; border-color: transparent; font-weight: 600; font-size: 12.5px; padding: 0 6px; min-height: var(--tap); cursor: pointer; }
+.vopts .select:hover { background: rgba(255,255,255,0.09); }
+.vopts option { background: #111a2b; }
+#c.is-flipped { transform: scaleX(-1); }
+.guide { position: absolute; pointer-events: none; background:
+  linear-gradient(to right, transparent calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
+  linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)); mix-blend-mode: difference; }
+.guide--frame { mix-blend-mode: normal; outline: 1px solid rgba(255,255,255,0.7); box-shadow: 0 0 0 9999px rgba(5,8,14,0.6); }
 .vhint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 999px; background: rgba(13,19,32,0.72); border: 1px solid var(--line); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .perf { position: absolute; top: 12px; right: 12px; font: 12px/1.4 ui-monospace, Consolas, monospace; color: #bfe9ff; background: rgba(0,0,0,0.5); padding: 6px 9px; border-radius: 8px; pointer-events: none; }
 .toast { position: absolute; left: 50%; bottom: 52px; transform: translate(-50%, 8px); opacity: 0; transition: opacity .18s, transform .18s; background: #1b2540; border: 1px solid var(--line2); padding: 8px 14px; border-radius: 10px; font-weight: 600; pointer-events: none; max-width: calc(100% - 24px); text-align: center; }
@@ -148,6 +157,9 @@ fieldset { border: 0; padding: 0; margin: 0; }
 .fatal { position: fixed; inset: 0; display: grid; place-content: center; gap: 8px; padding: 24px; background: rgba(5,7,12,0.92); z-index: 10; text-align: center; }
 .fatal pre { max-width: 90vw; white-space: pre-wrap; color: var(--danger); text-align: left; }
 
+/* not enough room beside the tools: the picture options drop under them */
+@media (max-width: 1180px) { .vopts { top: 62px; right: auto; left: 12px; } }
+
 /* phones and small tablets: the view takes the screen, tools live in a bottom sheet */
 @media (max-width: 820px) {
   :root { --topbar: 52px; }
@@ -158,8 +170,10 @@ fieldset { border: 0; padding: 0; margin: 0; }
   .panel.is-open { transform: none; }
   .panel__handle { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; border: 0; background: none; font-weight: 700; cursor: pointer; flex: none; }
   .panel__body { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
-  .vbar { top: 10px; max-width: calc(100% - 16px); }
+  .vbar { top: 10px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); }
   .vbtn span, .vbtn kbd { display: none; }
+  .vopts { top: 62px; left: 50%; transform: translateX(-50%); }
+  .vopts .vbtn span { display: none; }
   .vhint { bottom: 64px; }
   .toast { bottom: 100px; }
 }
