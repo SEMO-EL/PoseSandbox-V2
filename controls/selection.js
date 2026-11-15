@@ -55,6 +55,11 @@ export class Selection {
   }
 
   pick(clientX, clientY) {
+    return this.pickHit(clientX, clientY)?.target || null;
+  }
+
+  /** What is under the pointer and where the ray met it: { target, point } or null. */
+  pickHit(clientX, clientY) {
     const r = this.canvas.getBoundingClientRect();
     this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this.ray.setFromCamera(this.ndc, this.camera);
@@ -63,7 +68,7 @@ export class Selection {
       root.traverseVisible((o) => { if (o.isMesh && o.userData.pickable) meshes.push(o); });
     }
     const hit = this.ray.intersectObjects(meshes, false)[0];
-    return hit ? this.resolveHit?.(hit) || this.resolve(hit.object) : null;
+    return hit ? { target: this.resolveHit?.(hit) || this.resolve(hit.object), point: hit.point } : null;
   }
 
   set(target) {

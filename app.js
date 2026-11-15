@@ -11,7 +11,8 @@ import { createWorld, createProp, propColor, markImport, PROP_TYPES } from "./co
 import { createHistory } from "./core/history.js";
 import { isTypingTarget, stamp, downloadBlob, makeToast } from "./core/helpers.js";
 import { createCustomLight, applyLightParams, lightParams, MAX_LIGHTS } from "./lights/custom-lights.js";
-import { solveTwoBone, holdWorldRotation } from "./controls/ik.js";
+import { solveTwoBone, holdWorldRotation, aim } from "./controls/ik.js";
+import { createGrab } from "./controls/grab.js";
 import { Selection } from "./controls/selection.js";
 import { serializeScene, applyScene, mirrorPose, mirrorQuaternion } from "./poses/pose-io.js";
 import { PRESETS, applyPreset } from "./poses/presets.js";
@@ -42,7 +43,10 @@ function boot() {
   const { scene, camera, orbit, gizmo, floor } = S;
   const loop = createLoop({ renderer, scene, camera, orbit });
   const invalidate = loop.invalidate;
-  const figure = new Mannequin(scene).create(Mannequin.sculpt ? "sculpted" : "neutral");
+  // the cast: `figure` is the one the panel edits (the active one); selecting a part of another makes that one active
+  const figures = [new Mannequin(scene).create(Mannequin.sculpt ? "sculpted" : "neutral")];
+  let figure = figures[0];
+  const MAX_FIGURES = 6;
   const world = createWorld(scene);
   const reference = createReference(camera);
   const ikHandle = new THREE.Object3D();
@@ -50,7 +54,7 @@ function boot() {
   scene.add(ikHandle);
   const shadowCatcher = new THREE.ShadowMaterial({ opacity: 0.35 });
 
-  const opts = { mode: "rotate", symmetry: false, pinFeet: true, space: "local", snap: 15, axes: { x: true, y: true, z: true }, grid: true, floor: true };
+  const opts = { mode: "rotate", grab: true, symmetry: false, pinFeet: true, space: "local", snap: 15, axes: { x: true, y: true, z: true }, grid: true, floor: true };
   const env = { background: "midnight", preset: "studio", keyDir: "front_right" };
   const drag = { kind: null };
   let history = null;
@@ -102,16 +106,33 @@ function boot() {
 
   /* ------------------------------------------------------------ documents, history, session */
 
-  const ctx = { figure, world, cameraState: S.cameraState, setCameraState: S.setCameraState, envState, setEnvState };
+  function addFigure(like = null) {
+    const f = new Mannequin(scene);
+    f.skin = like ? like.skin : Object.keys(SKINS)[figures.length % Object.keys(SKINS).length]; // tell them apart at a glance
+    f.create(like ? like.build : figure.build);
+    if (like) f.restore(like.capture());
+    f.root.position.x = Math.max(...figures.map((g) => g.root.position.x)) + 0.75;
+    figures.push(f);
+    return f;
+  }
+  function removeFigure(f) {
+    if (figures.length < 2 || !figures.includes(f)) return;
+    figures.splice(figures.indexOf(f), 1);
+    f.dispose();
+    if (figure === f) figure = figures[0];
+  }
+  const ctx = { figures, addFigure: () => addFigure(), removeFigure, world, cameraState: S.cameraState, setCameraState: S.setCameraState, envState, setEnvState };
   const notes = () => $("poseNotes").value;
   const snapshot = () => JSON.stringify(serializeScene(ctx, { camera: false }));
 
   function loadDoc(doc, { camera = true } = {}) {
     const sel = selection.get();
     const selName = sel?.userData.isJoint ? sel.name : null;
+    const selFig = selName ? figures.indexOf(sel.userData.figure) : -1;
     const selUid = sel?.userData.uid;
     const res = applyScene(doc, ctx, { camera });
-    let next = selName ? figure.joint(selName) : selUid ? world.items.get(selUid) : null;
+    if (!figures.includes(figure)) figure = figures[0];
+    let next = selName ? (figures[selFig] || figure).joint(selName) : selUid ? world.items.get(selUid) : null;
     if (next && !next.userData.isJoint && next.parent !== scene) next = null;
     selection.selected = null; // joints may be new objects after a rebuild
     selection.set(next);
@@ -143,15 +164,20 @@ function boot() {
 
   const selection = new Selection({
     camera, canvas, gizmo,
-    getRoots: () => [figure.root, ...world.live()],
-    onChange: () => { updateInspector(); renderLightList(); attachGizmo(); },
+    getRoots: () => [...figures.map((f) => f.root), ...world.live()],
+    onChange: (sel) => {
+      const f = sel?.userData.figure;
+      if (f && f !== figure && figures.includes(f)) { figure = f; syncFigureUI(); }
+      updateInspector(); renderLightList(); attachGizmo();
+    },
     onHoverChange: (t) => { $("vhint").textContent = t ? labelOf(t) : modeHint; invalidate(); },
-    resolveHit: (hit) => figure.jointForHit(hit),
-    paintJoints: (sel, hov) => figure.paintJoints(sel, hov)
+    resolveHit: (hit) => { for (const f of figures) { const j = f.jointForHit(hit); if (j) return j; } return null; },
+    paintJoints: (sel, hov) => { for (const f of figures) f.paintJoints(sel?.userData.figure === f ? sel : null, hov?.userData.figure === f ? hov : null); }
   });
 
   const fingerName = (n) => (figure.fingerBlock ? n.replace("index finger", "fingers") : n); // one fused finger block on the sculpt
-  const labelOf = (o) => (o.userData.isJoint ? fingerName(jointLabel(o.name)) : o.name);
+  const figureName = (f) => `Figure ${figures.indexOf(f) + 1}`;
+  const labelOf = (o) => (o.userData.isJoint ? (figures.length > 1 ? figureName(o.userData.figure) + " · " : "") + fingerName(jointLabel(o.name)) : o.name);
 
   function setHint(text) {
     modeHint = text;
@@ -169,7 +195,7 @@ function boot() {
     gizmo.setRotationSnap(m === "rotate" && opts.snap ? THREE.MathUtils.degToRad(opts.snap) : null);
 
     let target = null;
-    let hint = "Drag empty space to orbit · right-drag to pan · scroll to zoom";
+    let hint = opts.grab ? "Drag a body part to pose it · drag empty space to orbit · scroll to zoom" : "Drag empty space to orbit · right-drag to pan · scroll to zoom";
     if (sel && m === "view") hint = "View mode: the gizmo is hidden — press 1, 2 or 4 to edit";
     else if (sel?.userData.isJoint) {
       const name = sel.name;
@@ -200,9 +226,9 @@ function boot() {
     invalidate();
   }
 
-  function solveChain(chain, target, endQ) {
-    const [a, b, e] = CHAINS[chain].map((n) => figure.joint(n));
-    const pole = new THREE.Vector3(0, 0, chain.endsWith("arm") ? -1 : 1).applyQuaternion(figure.root.quaternion);
+  function solveChain(chain, target, endQ, f = figure) {
+    const [a, b, e] = CHAINS[chain].map((n) => f.joint(n));
+    const pole = new THREE.Vector3(0, 0, chain.endsWith("arm") ? -1 : 1).applyQuaternion(f.root.quaternion);
     solveTwoBone(a, b, e, target, pole);
     if (endQ) holdWorldRotation(e, endQ);
   }
@@ -237,6 +263,50 @@ function boot() {
     if (opts.symmetry && sel?.userData.isJoint && drag.kind !== "hips" && drag.kind !== "root") mirrorJoints(drag.kind === "ik" ? CHAINS[drag.chain] : [sel.name]);
     invalidate();
   });
+
+  /* Drag a body part to pose it. A hand or foot pulls its limb (IK); the pelvis moves the body over planted feet;
+     the floor ring slides the whole figure; anything else swings about its own joint to follow the pointer. */
+  function grabStart(joint, point) {
+    if (!opts.grab || opts.mode === "view") return null;
+    const f = joint.userData.figure;
+    // fingers and toes are small targets on a hand or foot: they pull the limb unless that very part is selected
+    const fine = joint.name.match(/^([lr])_(thumb|index|middle|ring|pinky|toes)/);
+    if (fine && selection.get() !== joint) joint = f.joint(`${fine[1]}_${fine[2] === "toes" ? "ankle" : "wrist"}`);
+    const name = joint.name;
+    const last = point.clone(), delta = new THREE.Vector3(), tmp = new THREE.Vector3(), pivot = new THREE.Vector3();
+    const step = (t) => { delta.subVectors(t, last); last.copy(t); return delta; };
+    const mirror = (names) => { if (opts.symmetry) mirrorJoints(names); };
+    const feet = () => ["l_leg", "r_leg"].map((c) => { const e = f.joint(CHAINS[c][2]); return { c, pos: e.getWorldPosition(new THREE.Vector3()), q: e.getWorldQuaternion(new THREE.Quaternion()) }; });
+    f.root.updateMatrixWorld(true);
+
+    if (name === "char_root") return { joint, normal: new THREE.Vector3(0, 1, 0), apply: (t) => { step(t); f.root.position.x += delta.x; f.root.position.z += delta.z; invalidate(); } };
+
+    if (name === "hips") {
+      const planted = opts.pinFeet ? feet() : null;
+      const world = joint.getWorldPosition(new THREE.Vector3());
+      return { joint, apply: (t) => {
+        world.add(step(t));
+        joint.position.copy(f.root.worldToLocal(tmp.copy(world)));
+        if (planted) for (const p of planted) solveChain(p.c, p.pos, p.q, f);
+        invalidate();
+      } };
+    }
+
+    const chain = chainOf(name);
+    if (chain && name === CHAINS[chain][2]) {
+      const target = joint.getWorldPosition(new THREE.Vector3()), endQ = joint.getWorldQuaternion(new THREE.Quaternion());
+      return { joint, apply: (t) => { solveChain(chain, target.add(step(t)), endQ, f); mirror(CHAINS[chain]); invalidate(); } };
+    }
+
+    const local = joint.worldToLocal(point.clone());
+    return { joint, apply: (t) => {
+      joint.updateWorldMatrix(true, false);
+      aim(joint, joint.getWorldPosition(pivot), joint.localToWorld(tmp.copy(local)), t);
+      mirror([name]);
+      invalidate();
+    } };
+  }
+  createGrab({ canvas, camera, orbit, gizmo, selection, start: grabStart, end: (live) => { if (live) { attachGizmo(); commit(); } } });
 
   function setMode(m) {
     opts.mode = m;
@@ -291,7 +361,9 @@ function boot() {
   }
 
   function frameFigure() {
-    S.frameBox(boxOf(figure.root), 1.45);
+    const box = new THREE.Box3();
+    for (const f of figures) box.union(boxOf(f.root));
+    S.frameBox(box, figures.length > 1 ? 1.2 : 1.45);
     syncLensUI();
   }
 
@@ -311,6 +383,7 @@ function boot() {
 
   function deleteSelected() {
     const sel = selection.get();
+    if (sel?.userData.isJoint && sel.name === "char_root") return dropFigure();
     if (!sel || sel.userData.isJoint) return;
     world.remove(sel);
     selection.set(null);
@@ -318,9 +391,30 @@ function boot() {
     toast(`${sel.name} deleted — Ctrl+Z brings it back`);
   }
 
+  function newFigure(like = null) {
+    if (figures.length >= MAX_FIGURES) return toast(`Up to ${MAX_FIGURES} figures at once`);
+    const f = addFigure(like);
+    if (!like) applyPreset(f, PRESETS[0]);
+    selection.set(f.root);
+    setMode("move");
+    syncFigureUI();
+    commit();
+    toast(`${figureName(f)} added — drag the arrows to place it`, 2200);
+  }
+  function dropFigure() {
+    if (figures.length < 2) return toast("This is the only figure");
+    const f = figure;
+    selection.set(null);
+    removeFigure(f);
+    syncFigureUI();
+    commit();
+    toast("Figure removed — Ctrl+Z brings it back");
+  }
+
   function duplicateSelected() {
     const sel = selection.get();
-    if (!sel || sel.userData.isJoint) return;
+    if (sel?.userData.isJoint) return newFigure(sel.userData.figure);
+    if (!sel) return;
     let copy = null;
     if (sel.userData.kind === "prop") copy = createProp(sel.userData.type, { color: propColor(sel).getHex() });
     else if (sel.userData.kind === "light") {
@@ -557,8 +651,10 @@ function boot() {
   function makePresetThumbs() {
     const keep = figure.capture();
     const cam = S.cameraState();
-    const hidden = world.live().filter((o) => o.visible);
+    const hidden = [...world.live(), ...figures.filter((f) => f !== figure).map((f) => f.root)].filter((o) => o.visible);
     hidden.forEach((o) => (o.visible = false));
+    figure.root.position.set(0, 0, 0);
+    figure.root.quaternion.identity();
     camera.position.set(1.3, 1.1, 2.3);
     camera.lookAt(0, 0.86, 0);
     try {
@@ -665,6 +761,8 @@ function boot() {
   function syncFigureUI() {
     $("figBuild").value = figure.build;
     $("figSkin").value = figure.skin;
+    $("figCount").textContent = figures.length > 1 ? `${figureName(figure)} of ${figures.length} selected` : "One figure";
+    $("btnRemoveFigure").disabled = figures.length < 2;
     fillJointSelect();
     fillHandSelects();
   }
@@ -761,6 +859,7 @@ function boot() {
   const toggleSymmetry = () => { opts.symmetry = !opts.symmetry; $("togSym").checked = opts.symmetry; toast(opts.symmetry ? "Symmetry on" : "Symmetry off", 900); };
   $("togSym").addEventListener("change", (e) => { opts.symmetry = e.target.checked; });
   $("togPin").addEventListener("change", (e) => { opts.pinFeet = e.target.checked; attachGizmo(); });
+  $("togGrab").addEventListener("change", (e) => { opts.grab = e.target.checked; attachGizmo(); });
   $("btnResetPose").addEventListener("click", () => poseAction(() => figure.resetPose({ keepRoot: true }), "Pose reset"));
   $("btnMirror").addEventListener("click", () => poseAction(() => mirrorPose(figure), "Mirrored"));
   $("btnRandom").addEventListener("click", () => poseAction(randomPose));
@@ -778,6 +877,8 @@ function boot() {
     commit();
   });
   $("figSkin").addEventListener("change", (e) => { figure.setSkin(e.target.value); invalidate(); commit(); });
+  $("btnAddFigure").addEventListener("click", () => newFigure());
+  $("btnRemoveFigure").addEventListener("click", dropFigure);
   $("bgTone").addEventListener("change", (e) => { setBackground(e.target.value); commit(); });
   $("togGrid").addEventListener("change", (e) => { opts.grid = e.target.checked; applyFloorVisibility(); });
   $("togFloor").addEventListener("change", (e) => { opts.floor = e.target.checked; applyFloorVisibility(); });
@@ -970,5 +1071,12 @@ function boot() {
   });
   renderPresets();
   loop.start();
+  // for the tests: where a joint of the active figure is on the canvas (CSS px)
+  window.__ps = {
+    screenOf: (name) => {
+      const v = figure.joint(name).getWorldPosition(new THREE.Vector3()).project(camera);
+      return [Math.round((v.x + 1) / 2 * canvas.clientWidth), Math.round((1 - v.y) / 2 * canvas.clientHeight)];
+    }
+  };
   requestAnimationFrame(() => { makePresetThumbs(); if (restored) toast("Welcome back — your last scene is restored", 2200); });
 }

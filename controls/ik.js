@@ -10,7 +10,7 @@ const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
 const dq = new THREE.Quaternion(), wq = new THREE.Quaternion(), pq = new THREE.Quaternion();
 
 /** Turn `joint` (about its world pivot) so the direction pivot→from points along pivot→to. */
-function aim(joint, pivot, from, to) {
+export function aim(joint, pivot, from, to) {
   v1.subVectors(from, pivot).normalize();
   v2.subVectors(to, pivot).normalize();
   dq.setFromUnitVectors(v1, v2);

@@ -11,7 +11,7 @@ import { createWorld, createProp } from "../core/world.js";
 import { createHistory } from "../core/history.js";
 import { isTypingTarget } from "../core/helpers.js";
 import { createCustomLight } from "../lights/custom-lights.js";
-import { solveTwoBone } from "../controls/ik.js";
+import { solveTwoBone, aim } from "../controls/ik.js";
 import { serializeScene, applyScene, mirrorPose } from "../poses/pose-io.js";
 import { PRESETS, applyPreset } from "../poses/presets.js";
 
@@ -22,7 +22,10 @@ const rig = () => {
   const figure = new Mannequin(scene).create();
   const world = createWorld(scene);
   let cam = { position: [1, 1, 1], target: [0, 1, 0], fov: 40 };
-  return { scene, figure, world, ctx: { figure, world, cameraState: () => cam, setCameraState: (c) => (cam = c) } };
+  const figures = [figure];
+  const addFigure = () => { const f = new Mannequin(scene).create(); figures.push(f); return f; };
+  const removeFigure = (f) => { figures.splice(figures.indexOf(f), 1); f.dispose(); };
+  return { scene, figure, world, ctx: { figure, figures, addFigure, removeFigure, world, cameraState: () => cam, setCameraState: (c) => (cam = c) } };
 };
 const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
 
@@ -135,6 +138,35 @@ const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
   const target = c.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0.2));
   solveTwoBone(a, b, c, target, new THREE.Vector3(0, 0, 1));
   check("sculpted: leg IK reaches its target", c.getWorldPosition(new THREE.Vector3()).distanceTo(target) < 1e-3);
+}
+
+// 9 · several figures: each keeps its own pose through save → load, and a one-figure document sends the others away
+{
+  const A = rig();
+  const solo = json(A.ctx);
+  const second = A.ctx.addFigure();
+  applyPreset(second, PRESETS.find((p) => p.id === "sit"));
+  second.root.position.x = 0.9;
+  second.setSkin("wood");
+  const doc = serializeScene(A.ctx, { camera: false });
+  const B = rig();
+  applyScene(JSON.parse(JSON.stringify(doc)), B.ctx);
+  check("two figures survive save → load", B.ctx.figures.length === 2 && json(A.ctx) === json(B.ctx) && B.ctx.figures[1].skin === "wood" && B.scene.children.includes(B.ctx.figures[1].root));
+  applyScene(JSON.parse(solo), B.ctx);
+  check("a one-figure document removes the extra figure", B.ctx.figures.length === 1 && json(B.ctx) === solo && B.scene.children.filter((o) => o.name === "char_root").length === 1);
+}
+
+// 10 · dragging a part swings it about its joint so the grabbed point lands under the pointer
+{
+  const { figure } = rig();
+  const j = figure.joint("l_shoulder");
+  figure.root.updateMatrixWorld(true);
+  const pivot = j.getWorldPosition(new THREE.Vector3());
+  const grabbed = pivot.clone().add(new THREE.Vector3(0, -0.2, 0)), local = j.worldToLocal(grabbed.clone());
+  const to = pivot.clone().add(new THREE.Vector3(-0.2, 0, 0.05));
+  aim(j, pivot, grabbed, to);
+  const now = j.localToWorld(local.clone()).sub(pivot).normalize(), want = to.clone().sub(pivot).normalize();
+  check("drag-to-pose: the grabbed point follows the pointer", now.distanceTo(want) < 1e-4);
 }
 
 const out = document.getElementById("out");

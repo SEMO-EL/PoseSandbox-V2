@@ -157,6 +157,12 @@ export class Mannequin {
     return this;
   }
 
+  /** Take the figure out of the scene for good. */
+  dispose() {
+    this.scene.remove(this.root);
+    this.root.traverse((o) => { if (o !== this.skinned) o.geometry?.dispose(); o.material?.dispose?.(); });
+  }
+
   /** Every joint's local transform, for rebuilds. */
   capture() {
     return this.joints.map((j) => ({ name: j.name, p: j.position.clone(), q: j.quaternion.clone(), s: j.userData.segment.scale.clone() }));
@@ -229,6 +235,7 @@ export class Mannequin {
     j.name = name;
     j.position.set(x, y, z);
     j.userData.isJoint = true;
+    j.userData.figure = this; // which figure a picked joint belongs to (there can be several)
     const seg = new THREE.Group();
     seg.name = name + "_segment";
     seg.userData.isSegment = true;

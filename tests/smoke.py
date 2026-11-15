@@ -1,14 +1,14 @@
 """End-to-end smoke test of the editor in headless Chromium (Python + Playwright).
 
-    python -m http.server 8160          # from the repo root, in another terminal
-    python tests/smoke.py [http://localhost:8160]
+    python tools/serve.py 8161          # in another terminal
+    python tests/smoke.py [http://localhost:8161]
 
 Prints one line per check and exits non-zero if any fails.
 """
 import asyncio, sys, struct
 from playwright.async_api import async_playwright
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8160").rstrip("/")
+BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8161").rstrip("/")
 results = []
 
 
@@ -85,6 +85,33 @@ async def main():
         lights = await pg.locator("#lightList li").count()
         notes = await pg.input_value("#poseNotes")
         check("the session survives a reload", lights == 1 and notes.startswith("arm up"), f"lights={lights} notes={notes!r}")
+
+        # a second figure: added, undone, redone
+        await pg.click("summary:has-text('Figure')")
+        await pg.click("#btnAddFigure")
+        two = await pg.text_content("#figCount")
+        await pg.click("#c", position={"x": 5, "y": 5})
+        await pg.keyboard.press("Control+z")
+        one = await pg.text_content("#figCount")
+        await pg.keyboard.press("Control+Shift+z")
+        again = await pg.text_content("#figCount")
+        check("add a figure, undo, redo", "of 2" in two and one == "One figure" and "of 2" in again, f"{two} / {one} / {again}")
+        await pg.keyboard.press("Control+z")
+
+        # drag-to-pose: pulling a hand changes the pose and can be undone
+        before = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
+        await pg.evaluate("document.querySelector(\"[data-view='front']\").click(); document.getElementById('btnFrame').click()")
+        await pg.wait_for_timeout(700)
+        box = await pg.locator("#c").bounding_box()
+        hx, hy = await pg.evaluate("window.__ps.screenOf('l_wrist')")
+        gx, gy = await pg.evaluate("window.__ps.screenOf('l_index1')")  # grab the knuckles: fingers pull the hand
+        await pg.mouse.move(box["x"] + gx, box["y"] + gy)
+        await pg.mouse.down()
+        await pg.mouse.move(box["x"] + gx - 60, box["y"] + gy - 90, steps=8)
+        await pg.mouse.up()
+        sel = await pg.text_content("#selKind")
+        moved = await pg.evaluate("window.__ps.screenOf('l_wrist')")
+        check("dragging a hand pulls the arm", sel == "Right hand" and abs(moved[0] - (hx - 60)) < 12 and abs(moved[1] - (hy - 90)) < 12, f"{sel}, hand at {moved} from {[hx, hy]}")
 
         check("no page errors", not errors, "; ".join(errors[:3]))
 

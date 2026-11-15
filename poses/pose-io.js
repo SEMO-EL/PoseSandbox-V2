@@ -22,7 +22,7 @@ function legacyType(name = "") {
   return "cube";
 }
 
-export function serializeScene({ figure, world, cameraState, envState }, { camera = true, notes = "" } = {}) {
+function figureDoc(figure) {
   const joints = {};
   for (const j of figure.joints) {
     const e = { q: r5(j.quaternion.toArray()) };
@@ -31,34 +31,14 @@ export function serializeScene({ figure, world, cameraState, envState }, { camer
     if (Math.abs(s.x - 1) + Math.abs(s.y - 1) + Math.abs(s.z - 1) > 1e-6) e.s = r5(s.toArray());
     joints[j.name] = e;
   }
-  const doc = {
-    app: "PoseSandbox",
-    version: 2,
-    build: figure.build,
-    skin: figure.skin,
-    notes,
-    joints,
-    props: world.live("prop").map((p) => ({ uid: p.userData.uid, type: p.userData.type, name: p.name, color: "#" + propColor(p).getHexString(), ...xform(p) })),
-    lights: world.live("light").map((l) => ({ uid: l.userData.uid, type: l.userData.lightType, name: l.name, ...lightParams(l), ...xform(l) })),
-    imports: world.live("import").map((m) => ({ uid: m.userData.uid, name: m.name, ...xform(m) }))
-  };
-  if (envState) doc.env = envState(); // studio lights + background
-  if (camera) doc.camera = cameraState();
-  return doc;
+  return { build: figure.build, skin: figure.skin, joints };
 }
 
-/**
- * Apply a pose document. Only the item kinds present in the document are touched (a v1 file has no lights, so
- * your lights stay). Imported models cannot travel inside a pose file: they are matched by name and their
- * placement restored; the names not found are returned in `missing`.
- */
-export function applyScene(doc, { figure, world, setCameraState, setEnvState }, { camera = true } = {}) {
-  if (!doc || typeof doc !== "object" || !doc.joints || typeof doc.joints !== "object") throw new Error("Not a PoseSandbox pose");
-
-  if (doc.build && doc.build !== figure.build) figure.create(doc.build);
-  if (doc.skin && doc.skin !== figure.skin) figure.setSkin(doc.skin);
+function applyFigure(figure, d) {
+  if (d.build && d.build !== figure.build) figure.create(d.build);
+  if (d.skin && d.skin !== figure.skin) figure.setSkin(d.skin);
   figure.resetPose();
-  for (const [name, v] of Object.entries(doc.joints)) {
+  for (const [name, v] of Object.entries(d.joints)) {
     const j = figure.joint(name);
     if (!j) continue;
     if (Array.isArray(v)) { if (v.length === 4) setQ(j.quaternion, v); continue; } // v1
@@ -66,6 +46,42 @@ export function applyScene(doc, { figure, world, setCameraState, setEnvState }, 
     if (v?.p?.length === 3) j.position.fromArray(v.p);
     if (v?.s?.length === 3) j.userData.segment.scale.fromArray(v.s);
   }
+}
+
+/** The first figure is written at the top level (what v1/v2 files always had); any others go in `figures`. */
+export function serializeScene({ figure, figures = [figure], world, cameraState, envState }, { camera = true, notes = "" } = {}) {
+  const first = figureDoc(figures[0]);
+  const doc = {
+    app: "PoseSandbox",
+    version: 2,
+    build: first.build,
+    skin: first.skin,
+    notes,
+    joints: first.joints,
+    props: world.live("prop").map((p) => ({ uid: p.userData.uid, type: p.userData.type, name: p.name, color: "#" + propColor(p).getHexString(), ...xform(p) })),
+    lights: world.live("light").map((l) => ({ uid: l.userData.uid, type: l.userData.lightType, name: l.name, ...lightParams(l), ...xform(l) })),
+    imports: world.live("import").map((m) => ({ uid: m.userData.uid, name: m.name, ...xform(m) }))
+  };
+  if (figures.length > 1) doc.figures = figures.slice(1).map(figureDoc);
+  if (envState) doc.env = envState(); // studio lights + background
+  if (camera) doc.camera = cameraState();
+  return doc;
+}
+
+/**
+ * Apply a pose document. Only the item kinds present in the document are touched (a v1 file has no lights, so
+ * your lights stay); the figures always match the document. Imported models cannot travel inside a pose file: they are matched by name and their
+ * placement restored; the names not found are returned in `missing`.
+ */
+export function applyScene(doc, { figure, figures = [figure], addFigure, removeFigure, world, setCameraState, setEnvState }, { camera = true } = {}) {
+  if (!doc || typeof doc !== "object" || !doc.joints || typeof doc.joints !== "object") throw new Error("Not a PoseSandbox pose");
+
+  // a document is the whole cast: figures it doesn't have leave the scene, figures it has that are missing join it
+  const extra = Array.isArray(doc.figures) ? doc.figures.filter((d) => d?.joints && typeof d.joints === "object") : [];
+  while (figures.length - 1 > extra.length && removeFigure) removeFigure(figures[figures.length - 1]);
+  while (figures.length - 1 < extra.length && addFigure) addFigure();
+  applyFigure(figures[0], doc);
+  extra.forEach((d, i) => { if (figures[i + 1]) applyFigure(figures[i + 1], d); });
 
   const missing = [];
   const keep = new Set();
