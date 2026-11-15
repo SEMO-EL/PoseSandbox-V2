@@ -14,6 +14,7 @@ import { isTypingTarget, stamp, downloadBlob, makeToast } from "./core/helpers.j
 import { createCustomLight, applyLightParams, lightParams, MAX_LIGHTS } from "./lights/custom-lights.js";
 import { solveTwoBone, holdWorldRotation, aim } from "./controls/ik.js";
 import { createGrab } from "./controls/grab.js";
+import { createPractice } from "./controls/practice.js";
 import { Selection } from "./controls/selection.js";
 import { serializeScene, applyScene, mirrorPose, mirrorQuaternion } from "./poses/pose-io.js";
 import { PRESETS, applyPreset } from "./poses/presets.js";
@@ -679,6 +680,66 @@ function boot() {
     figure.ground();
   }
 
+  /** A library pose made a little different each time: mirrored half the time, every big joint nudged. */
+  function variedPose(f, preset) {
+    applyPreset(f, preset);
+    const e = new THREE.Euler(), q = new THREE.Quaternion(), R = (d) => THREE.MathUtils.degToRad((Math.random() * 2 - 1) * d);
+    for (const j of f.joints) {
+      const part = j.name.replace(/^[lr]_/, "");
+      const d = { spine: 7, chest: 7, neck: 8, head: 10, shoulder: 12, hip: 8, wrist: 12 }[part];
+      if (d) j.quaternion.multiply(q.setFromEuler(e.set(R(d), R(d), R(d))));
+      else if (part === "elbow" || part === "knee") j.quaternion.multiply(q.setFromEuler(e.set(R(9), 0, 0)));
+    }
+    if (Math.random() < 0.5) mirrorPose(f);
+    f.root.position.x = 0;
+    f.ground();
+    if (preset.lift) f.joint("hips").position.y += preset.lift;
+  }
+
+  /* ------------------------------------------------------------ gesture practice */
+
+  const session = { keep: null, log: [], last: null, mode: "rotate" };
+  const practice = createPractice({
+    $, dialog: $("practiceDialog"), overlay: $("practice"), toast,
+    begin: (o) => {
+      session.keep = JSON.stringify(serializeScene(ctx));
+      session.log = [];
+      session.o = o;
+      session.mode = opts.mode;
+      selection.set(null);
+      selection.enabled = false; // nothing lights up under the pointer while you draw
+      setMode("view");
+    },
+    show: (n) => {
+      let step = session.log[n];
+      if (!step) {
+        const saved = session.o.source === "saved" && gallery.items.length ? gallery.items : null;
+        if (saved) {
+          let it; do { it = saved[Math.floor(Math.random() * saved.length)]; } while (saved.length > 1 && it === session.last);
+          session.last = it;
+          loadDoc(it.pose, { camera: !session.o.angles });
+        } else {
+          while (figures.length > 1) removeFigure(figures[figures.length - 1]);
+          const pool = PRESETS.filter((p) => !p.plain && p !== session.last);
+          session.last = pool[Math.floor(Math.random() * pool.length)];
+          variedPose(figure, session.last);
+        }
+        if (session.o.angles) S.orbitTo(Math.random() * Math.PI * 2, THREE.MathUtils.degToRad(-6 + Math.random() * 40));
+        frameFigure();
+        step = session.log[n] = JSON.stringify(serializeScene(ctx));
+      } else loadDoc(JSON.parse(step));
+      selection.set(null);
+      for (const f of figures) f.ring.visible = false; // the floor ring is a handle, not part of the drawing
+      invalidate();
+    },
+    finish: () => {
+      selection.enabled = $("togHighlight").checked;
+      loadDoc(JSON.parse(session.keep));
+      for (const f of figures) f.ring.visible = true;
+      setMode(session.mode);
+    }
+  });
+
   function poseAction(fn, msg) {
     fn();
     selection.repaint();
@@ -1091,6 +1152,7 @@ function boot() {
     if (isTypingTarget(e.target) || document.querySelector("dialog[open]")) return;
     const k = e.key.toLowerCase();
     const mod = e.ctrlKey || e.metaKey;
+    if (practice.active()) { if (!mod && practice.key(k)) e.preventDefault(); if (!["l", "h", "f"].includes(k) || mod) return; }
     if (mod) {
       const act = { z: () => (e.shiftKey ? redo() : undo()), y: redo, s: saveToGallery, e: openExport, m: toggleSymmetry, d: duplicateSelected }[k];
       if (act) { e.preventDefault(); act(); }
@@ -1148,6 +1210,7 @@ function boot() {
   loop.start();
   // for the tests: where a joint of the active figure is on the canvas (CSS px)
   window.__ps = {
+    pose: () => serializeScene(ctx, { camera: false }).joints,
     exportUrl: () => cleanRender(exportOptions(), (c) => finishExport(c).toDataURL("image/png")),
     screenOf: (name) => {
       const v = figure.joint(name).getWorldPosition(new THREE.Vector3()).project(camera);

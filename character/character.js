@@ -268,7 +268,7 @@ export class Mannequin {
   _makeSculpted(S) {
     const root = this._joint("char_root", null);
     this.root = root;
-    this._mesh(root, new THREE.TorusGeometry(0.34, 0.007, 8, 64).rotateX(Math.PI / 2), { y: 0.004, helper: true });
+    this.ring = this._mesh(root, new THREE.TorusGeometry(0.34, 0.007, 8, 64).rotateX(Math.PI / 2), { y: 0.004, helper: true });
     // rest rotations are identity: the sculpt's own stance is the rest pose, offsets are the measured deltas
     for (const name of S.order) {
       if (name === "char_root") continue;
@@ -307,7 +307,7 @@ export class Mannequin {
     const root = this._joint("char_root", null);
     this.root = root;
     // whole-figure handle: a ring on the floor around the feet
-    this._mesh(root, new THREE.TorusGeometry(0.34, 0.007, 8, 64).rotateX(Math.PI / 2), { y: 0.004, helper: true });
+    this.ring = this._mesh(root, new THREE.TorusGeometry(0.34, 0.007, 8, 64).rotateX(Math.PI / 2), { y: 0.004, helper: true });
 
     const hips = this._joint("hips", root, 0, 0.97, 0);
     this._mesh(hips, ellipsoid(...B.pelvis), { y: -0.012 });

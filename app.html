@@ -38,6 +38,10 @@
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
       <symbol id="i-flip" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M8 7 3 12l5 5V7zM16 7l5 5-5 5V7z"/></symbol>
+      <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6M12 2v3"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="m6 5 9 7-9 7zM18 5v14"/></symbol>
+      <symbol id="i-prev" viewBox="0 0 24 24"><path d="m18 5-9 7 9 7zM6 5v14"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
     </defs>
   </svg>
@@ -49,6 +53,7 @@
       <button class="iconbtn" id="btnRedo" type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-redo"/></svg></button>
     </div>
     <div class="spacer"></div>
+    <button class="btn btn--ghost" id="btnPractice" type="button" title="Timed gesture practice"><svg><use href="#i-timer"/></svg><span class="lbl">Practice</span></button>
     <button class="btn btn--ghost" id="btnImport3D" type="button" title="Import a .glb or .gltf model"><svg><use href="#i-upload"/></svg><span class="lbl">Import 3D</span></button>
     <button class="iconbtn" id="btnHelp" type="button" aria-label="Help and shortcuts" title="Help (?)"><svg><use href="#i-help"/></svg></button>
     <button class="btn btn--primary" id="btnExport" type="button" title="Export PNG (Ctrl+E)"><svg><use href="#i-download"/></svg><span class="lbl">Export</span></button>
@@ -232,6 +237,14 @@
         <select id="guideSelect" class="select select--sm" title="Framing guide — Export crops to it"></select>
       </div>
       <div class="guide" id="guide" hidden></div>
+      <div class="practice" id="practice" hidden>
+        <div class="practice__clock" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15.915"/><circle id="prRing" cx="18" cy="18" r="15.915" pathLength="100"/></svg></div>
+        <div class="practice__text"><strong id="prTime" role="timer">0:30</strong><span id="prCount">1 / 10</span></div>
+        <button class="iconbtn" id="prPrev" type="button" aria-label="Previous pose" title="Previous pose (←)"><svg><use href="#i-prev"/></svg></button>
+        <button class="iconbtn" id="prPause" type="button" aria-label="Pause" aria-pressed="false" title="Pause (Space)"><svg><use href="#i-pause"/></svg></button>
+        <button class="iconbtn" id="prNext" type="button" aria-label="Next pose" title="Next pose (→)"><svg><use href="#i-next"/></svg></button>
+        <button class="btn" id="prExit" type="button" title="End practice (Esc)">End</button>
+      </div>
       <p class="vhint" id="vhint">Drag a body part to pose it · drag empty space to orbit · scroll to zoom</p>
       <div class="perf" id="perf" hidden></div>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -262,6 +275,32 @@
     </form>
   </dialog>
 
+  <dialog id="practiceDialog" aria-labelledby="practiceTitle">
+    <form method="dialog" class="dialog">
+      <div class="row row--between"><h2 id="practiceTitle">Gesture practice</h2><button class="iconbtn" value="cancel" aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+      <p class="hint">A new pose on a timer, like a life-drawing warm-up. Draw fast, don't finish. Your scene comes back when you end.</p>
+      <fieldset class="seg"><legend class="label">Time per pose</legend>
+        <label><input type="radio" name="seconds" value="30" /><span>30 s</span></label>
+        <label><input type="radio" name="seconds" value="60" checked /><span>1 min</span></label>
+        <label><input type="radio" name="seconds" value="120" /><span>2 min</span></label>
+        <label><input type="radio" name="seconds" value="300" /><span>5 min</span></label>
+      </fieldset>
+      <fieldset class="seg"><legend class="label">Poses</legend>
+        <label><input type="radio" name="count" value="5" /><span>5</span></label>
+        <label><input type="radio" name="count" value="10" checked /><span>10</span></label>
+        <label><input type="radio" name="count" value="20" /><span>20</span></label>
+        <label><input type="radio" name="count" value="0" /><span>No end</span></label>
+      </fieldset>
+      <fieldset class="seg"><legend class="label">From</legend>
+        <label><input type="radio" name="source" value="library" checked /><span>Pose library</span></label>
+        <label><input type="radio" name="source" value="saved" /><span>My saved poses</span></label>
+      </fieldset>
+      <label class="toggle"><input type="checkbox" name="angles" checked /><span>A new camera angle for every pose</span></label>
+      <label class="toggle"><input type="checkbox" name="sound" checked /><span>Soft chime when the pose changes</span></label>
+      <div class="row row--end"><button class="btn btn--primary" type="button" id="btnPracticeStart"><svg><use href="#i-timer"/></svg>Start</button></div>
+    </form>
+  </dialog>
+
   <dialog id="helpDialog" aria-labelledby="helpTitle">
     <div class="dialog">
       <div class="row row--between"><h2 id="helpTitle">How it works</h2><form method="dialog"><button class="iconbtn" aria-label="Close"><svg><use href="#i-x"/></svg></button></form></div>
@@ -272,6 +311,7 @@
         <li><b>Rotate</b> turns the selected joint. <b>Move</b> on a hand or foot bends the whole limb (IK); on the body it moves the hips with the feet planted; the ring on the floor moves the whole figure.</li>
         <li>Add <b>point and spot lights</b> in Lighting, then place them with Move and aim spots with Rotate.</li>
         <li><b>Look</b> (top right) redraws the picture as flat <b>Values</b>, <b>Ink</b> line art or a <b>Silhouette</b>; <b>Flip</b> mirrors the view; a <b>framing guide</b> shows the crop.</li>
+        <li><b>Practice</b> (top bar) runs timed gesture drawing: a new pose and camera angle every 30 seconds to 5 minutes. <kbd>Space</kbd> pauses, <kbd>←</kbd> <kbd>→</kbd> step, <kbd>Esc</kbd> ends.</li>
         <li><b>Export</b> gives a clean PNG (no gizmo) of what you see — look, flip and crop included — at 1×, 2× or 4×, optionally transparent.</li>
       </ul>
       <table class="keys">

@@ -130,6 +130,19 @@ input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px sol
   linear-gradient(to right, transparent calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
   linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% - 0.5px), rgba(255,255,255,0.28) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% - 0.5px), rgba(255,255,255,0.28) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)); mix-blend-mode: difference; }
 .guide--frame { mix-blend-mode: normal; outline: 1px solid rgba(255,255,255,0.7); box-shadow: 0 0 0 9999px rgba(5,8,14,0.6); }
+/* gesture practice: the tools step aside, a clock takes their place */
+.practice { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 6px; border-radius: 14px; background: rgba(13,19,32,0.86); border: 1px solid var(--line2); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+.practice__clock svg { width: 44px; height: 44px; stroke-width: 3; transform: rotate(-90deg); display: block; }
+.practice__clock .track { stroke: rgba(255,255,255,0.12); }
+#prRing { stroke: var(--accent2); stroke-dasharray: 100; stroke-dashoffset: 0; transition: stroke-dashoffset .2s linear, stroke .3s; }
+.practice.is-ending #prRing { stroke: var(--danger); }
+.practice.is-paused #prRing { stroke: var(--faint); }
+.practice__text { display: flex; flex-direction: column; min-width: 64px; line-height: 1.15; }
+.practice__text strong { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.practice__text span { font-size: 12px; color: var(--muted); }
+.practice .iconbtn[aria-pressed="true"] { background: rgba(36,210,255,0.14); border-color: rgba(36,210,255,0.55); }
+.is-practice .panel, .is-practice .vbar, .is-practice .vhint, .is-practice .group, .is-practice #btnImport3D, .is-practice #btnPractice { display: none; }
+.is-practice .layout { grid-template-columns: minmax(0, 1fr); }
 .vhint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 999px; background: rgba(13,19,32,0.72); border: 1px solid var(--line); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .perf { position: absolute; top: 12px; right: 12px; font: 12px/1.4 ui-monospace, Consolas, monospace; color: #bfe9ff; background: rgba(0,0,0,0.5); padding: 6px 9px; border-radius: 8px; pointer-events: none; }
 .toast { position: absolute; left: 50%; bottom: 52px; transform: translate(-50%, 8px); opacity: 0; transition: opacity .18s, transform .18s; background: #1b2540; border: 1px solid var(--line2); padding: 8px 14px; border-radius: 10px; font-weight: 600; pointer-events: none; max-width: calc(100% - 24px); text-align: center; }

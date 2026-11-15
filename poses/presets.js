@@ -1,7 +1,7 @@
 // poses/presets.js
 // The built-in pose library. Angles in degrees, Euler order ZYX (abduct, then twist, then bend — the order an
 // artist thinks in). Legacy "l_" joints are the figure's RIGHT side. Every preset is grounded afterwards so the
-// feet land on the floor; `lift` raises it again (a jump).
+// feet land on the floor; `lift` raises it again (a jump). `plain` poses (stand, T, A) are left out of gesture practice.
 //
 // Conventions at rest (arms hang, figure faces +Z):
 //   shoulder: z = out to the side (l_ negative, r_ positive), x < 0 = forward
@@ -12,9 +12,9 @@ import * as THREE from "three";
 import { applyHandPose } from "./hands.js";
 
 export const PRESETS = [
-  { id: "stand", name: "Stand", hands: "relaxed", joints: { l_shoulder: [0, 0, -7], r_shoulder: [0, 0, 7], l_elbow: [-10, 0, 0], r_elbow: [-10, 0, 0] } },
-  { id: "tpose", name: "T-pose", hands: "open", joints: { l_shoulder: [0, 0, -90], r_shoulder: [0, 0, 90] } },
-  { id: "apose", name: "A-pose", hands: "relaxed", joints: { l_shoulder: [0, 0, -45], r_shoulder: [0, 0, 45] } },
+  { id: "stand", name: "Stand", plain: true, hands: "relaxed", joints: { l_shoulder: [0, 0, -7], r_shoulder: [0, 0, 7], l_elbow: [-10, 0, 0], r_elbow: [-10, 0, 0] } },
+  { id: "tpose", name: "T-pose", plain: true, hands: "open", joints: { l_shoulder: [0, 0, -90], r_shoulder: [0, 0, 90] } },
+  { id: "apose", name: "A-pose", plain: true, hands: "relaxed", joints: { l_shoulder: [0, 0, -45], r_shoulder: [0, 0, 45] } },
   {
     id: "contrapposto", name: "Contrapposto", hands: "relaxed",
     joints: {

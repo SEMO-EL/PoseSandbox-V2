@@ -144,6 +144,25 @@ async def main():
         await pg.select_option("#lookSelect", "shaded")
         await pg.select_option("#guideSelect", "none")
 
+        # gesture practice: poses change, the scene comes back afterwards
+        await pg.wait_for_timeout(600)
+        mine = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
+        await pg.click("#btnPractice")
+        await pg.click("#practiceDialog label:has-text('30 s')")
+        await pg.click("#btnPracticeStart")
+        on = await pg.evaluate("document.body.classList.contains('is-practice') && !document.getElementById('practice').hidden")
+        first = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        await pg.keyboard.press("ArrowRight")
+        second = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        count = await pg.text_content("#prCount")
+        await pg.keyboard.press("ArrowLeft")
+        back = await pg.evaluate("JSON.stringify(window.__ps.pose())")
+        await pg.keyboard.press("Escape")
+        await pg.wait_for_timeout(700)
+        after = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
+        off = await pg.evaluate("!document.body.classList.contains('is-practice') && document.getElementById('practice').hidden")
+        check("practice: new poses on demand, back returns the same pose, the scene is restored", on and off and first != second and back == first and count.startswith("2 /") and after == mine, f"count={count} restored={after == mine}")
+
         check("no page errors", not errors, "; ".join(errors[:3]))
 
         # phone: the view fills the screen, no sideways scroll

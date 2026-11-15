@@ -165,6 +165,14 @@ export function createScene({ renderer, canvas }) {
     orbit.update();
   }
 
+  /** Look from a compass angle (0 = front, radians) and a height angle, keeping the distance. */
+  function orbitTo(azimuth, elevation) {
+    const d = camera.position.distanceTo(orbit.target);
+    camera.position.copy(orbit.target).add(new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation)).multiplyScalar(d));
+    desired = d;
+    orbit.update();
+  }
+
   /** Point the camera at a box and back off until it fits. */
   function frameBox(box, pad = 1.25) {
     const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -196,6 +204,6 @@ export function createScene({ renderer, canvas }) {
   return {
     scene, camera, orbit, gizmo, gizmoHelper, lights, floor, axes,
     grid: () => grid,
-    setBackground, setKeyDirection, applyLightingPreset, setLens, viewFrom, frameBox, cameraState, setCameraState
+    setBackground, setKeyDirection, applyLightingPreset, setLens, viewFrom, orbitTo, frameBox, cameraState, setCameraState
   };
 }
