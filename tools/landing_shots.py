@@ -1,6 +1,6 @@
 """Render the home page's poster (the studio with no UI) and the pose-library thumbnails from its own live scene.
 
-Serve the repo (python -m http.server 8160), then: python tools/landing_shots.py  (needs playwright + pillow)
+Serve the repo (python tools/serve.py 8161), then: python tools/landing_shots.py  (needs playwright + pillow)
 """
 import asyncio, pathlib, io
 from playwright.async_api import async_playwright
@@ -14,7 +14,7 @@ async def main():
     async with async_playwright() as p:
         br = await p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
         pg = await br.new_page(viewport={"width": W, "height": H})
-        await pg.goto("http://localhost:8160/index.html")
+        await pg.goto("http://localhost:8161/index.html")
         await pg.wait_for_function("document.body.classList.contains('is-live') && window.__stage", timeout=120000, polling=500)
         await pg.evaluate("document.querySelectorAll('header, main, .posename').forEach((e) => e.style.visibility = 'hidden'); __stage.hold(0)")
         shot = lambda **kw: pg.screenshot(**kw)

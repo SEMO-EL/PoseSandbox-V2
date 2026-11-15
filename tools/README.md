@@ -18,3 +18,11 @@ Check `tests/selfcheck.html` after a conversion (bind, weights, presets on the f
 figure alone (`?preset=jump&view=x,y,z&look=x,y,z`).
 
 `landing_shots.py` re-renders the home page's poster and pose thumbnails from its live stage.
+
+`serve.py` is the dev server (never cached): `python tools/serve.py 8161`.
+
+`pose_sheet.py` renders library poses from two angles into one image, to check new poses by eye:
+`python tools/pose_sheet.py sheet.jpg [id id ...]`.
+
+`aim_angles.mjs` turns "this limb points there and bends toward there" (or "the wrist goes here") into the
+`[x, y, z]` angles `poses/presets.js` uses: `node tools/aim_angles.mjs "0.5,-0.82,-0.28" "-0.85,0.1,0.5"`.
