@@ -11,7 +11,7 @@ import { createWorld, createProp } from "../core/world.js";
 import { createHistory } from "../core/history.js";
 import { isTypingTarget } from "../core/helpers.js";
 import { createCustomLight } from "../lights/custom-lights.js";
-import { solveTwoBone, aim } from "../controls/ik.js";
+import { solveTwoBone, aim, clampHinge } from "../controls/ik.js";
 import { serializeScene, applyScene, mirrorPose } from "../poses/pose-io.js";
 import { PRESETS, applyPreset } from "../poses/presets.js";
 
@@ -167,6 +167,30 @@ const json = (ctx) => JSON.stringify(serializeScene(ctx, { camera: false }));
   aim(j, pivot, grabbed, to);
   const now = j.localToWorld(local.clone()).sub(pivot).normalize(), want = to.clone().sub(pivot).normalize();
   check("drag-to-pose: the grabbed point follows the pointer", now.distanceTo(want) < 1e-4);
+}
+
+// 11 · a dragged elbow stays a hinge: no twist, no bending backwards, never past 150 degrees
+{
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-3, 0.6, 0.3));
+  clampHinge(q, -2.62, 0.05);
+  const back = clampHinge(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.9, 0, 0)), -2.62, 0.05);
+  const fine = clampHinge(new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.2, 0, 0)), -2.62, 0.05);
+  const ang = (x) => 2 * Math.atan2(x.x, x.w);
+  check("hinge limit: elbows and knees bend one way only", q.y === 0 && q.z === 0 && Math.abs(ang(q) + 2.62) < 1e-6 && Math.abs(ang(back) - 0.05) < 1e-6 && Math.abs(ang(fine) + 1.2) < 1e-6);
+}
+
+// 12 · IK with hinges: the hand still lands on the target, and the elbow and knee turn about X only, the right way
+{
+  const { figure } = rig();
+  const bad = [];
+  for (const [chain, sign, off] of [["l_arm", -1, [-0.2, 0.3, 0.3]], ["r_arm", -1, [0.25, 0.5, -0.1]], ["l_leg", 1, [-0.1, 0.3, 0.25]], ["r_leg", 1, [0.2, 0.2, -0.2]]]) {
+    const [a, b, c] = CHAINS[chain].map((n) => figure.joint(n));
+    const target = c.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(...off));
+    solveTwoBone(a, b, c, target, new THREE.Vector3(0, 0, sign), sign);
+    const q = b.quaternion, miss = c.getWorldPosition(new THREE.Vector3()).distanceTo(target);
+    if (miss > 1e-3 || Math.abs(q.y) > 0.02 || Math.abs(q.z) > 0.02 || q.x * q.w * sign <= 0) bad.push(`${chain}: off ${miss.toExponential(1)}, q ${q.toArray().map((v) => v.toFixed(3))}`);
+  }
+  check("hinged IK reaches and bends elbows and knees about one axis", !bad.length, bad.join("; "));
 }
 
 const out = document.getElementById("out");

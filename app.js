@@ -13,7 +13,7 @@ import { createHistory } from "./core/history.js";
 import { isTypingTarget, stamp, downloadBlob, makeToast } from "./core/helpers.js";
 import { encodeShare, decodeShare } from "./core/share.js";
 import { createCustomLight, applyLightParams, lightParams, MAX_LIGHTS } from "./lights/custom-lights.js";
-import { solveTwoBone, holdWorldRotation, aim } from "./controls/ik.js";
+import { solveTwoBone, holdWorldRotation, aim, clampHinge } from "./controls/ik.js";
 import { createGrab } from "./controls/grab.js";
 import { createPractice } from "./controls/practice.js";
 import { Selection } from "./controls/selection.js";
@@ -62,7 +62,7 @@ function boot() {
   scene.add(ikHandle);
   const shadowCatcher = new THREE.ShadowMaterial({ opacity: 0.35 });
 
-  const opts = { mode: "rotate", grab: true, symmetry: false, pinFeet: true, space: "local", snap: 15, axes: { x: true, y: true, z: true }, grid: true, floor: true };
+  const opts = { mode: "rotate", grab: true, limits: true, symmetry: false, pinFeet: true, space: "local", snap: 15, axes: { x: true, y: true, z: true }, grid: true, floor: true };
   const env = { background: "midnight", preset: "studio", keyDir: "front_right" };
   const drag = { kind: null };
   let history = null;
@@ -276,7 +276,7 @@ function boot() {
   function solveChain(chain, target, endQ, f = figure) {
     const [a, b, e] = CHAINS[chain].map((n) => f.joint(n));
     const pole = new THREE.Vector3(0, 0, chain.endsWith("arm") ? -1 : 1).applyQuaternion(f.root.quaternion);
-    solveTwoBone(a, b, e, target, pole);
+    solveTwoBone(a, b, e, target, pole, opts.limits ? (chain.endsWith("arm") ? -1 : 1) : 0);
     if (endQ) holdWorldRotation(e, endQ);
   }
 
@@ -346,9 +346,11 @@ function boot() {
     }
 
     const local = joint.worldToLocal(point.clone());
+    const hinge = opts.limits && (/_elbow$/.test(name) ? [-2.62, 0.05] : /_knee$/.test(name) ? [-0.05, 2.62] : null); // 150 degrees one way
     return { joint, apply: (t) => {
       joint.updateWorldMatrix(true, false);
       aim(joint, joint.getWorldPosition(pivot), joint.localToWorld(tmp.copy(local)), t);
+      if (hinge) clampHinge(joint.quaternion, ...hinge);
       mirror([name]);
       invalidate();
     } };
@@ -999,6 +1001,7 @@ function boot() {
   $("togSym").addEventListener("change", (e) => { opts.symmetry = e.target.checked; });
   $("togPin").addEventListener("change", (e) => { opts.pinFeet = e.target.checked; attachGizmo(); });
   $("togGrab").addEventListener("change", (e) => { opts.grab = e.target.checked; attachGizmo(); });
+  $("togLimits").addEventListener("change", (e) => { opts.limits = e.target.checked; });
   $("btnResetPose").addEventListener("click", () => poseAction(() => figure.resetPose({ keepRoot: true }), "Pose reset"));
   $("btnMirror").addEventListener("click", () => poseAction(() => mirrorPose(figure), "Mirrored"));
   $("btnRandom").addEventListener("click", () => poseAction(randomPose));
