@@ -175,6 +175,17 @@ async def main():
         reopened = await pg.evaluate("JSON.stringify(window.__ps.pose())")
         check("a copied link reopens the scene", "#p=z" in link and changed != shared and reopened == shared and not await pg.evaluate("location.hash"), f"link is {len(link)} characters")
 
+        # turntable: a video file comes out, and the camera is back where it was
+        cam0 = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
+        await pg.click("#btnExport")
+        async with pg.expect_download(timeout=60000) as dl:
+            await pg.click("#btnTurntable")
+        video = await dl.value
+        size = __import__("os").path.getsize(await video.path())
+        await pg.wait_for_timeout(700)
+        cam1 = await pg.evaluate("localStorage.getItem('posesandbox_session_v2')")
+        check("turntable video is recorded", video.suggested_filename.endswith((".webm", ".mp4")) and size > 20000, f"{video.suggested_filename}, {size // 1024} KB")
+
         check("no page errors", not errors, "; ".join(errors[:3]))
 
         # phone: the view fills the screen, no sideways scroll

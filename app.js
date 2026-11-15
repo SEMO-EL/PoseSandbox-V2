@@ -481,9 +481,8 @@ function boot() {
 
   /* ------------------------------------------------------------ clean renders: export + thumbnails */
 
-  function cleanRender({ scale = 1, transparent = false, grid = false, floorOn = true, ref = false, styled = false } = {}, read) {
-    const look = looks.get();
-    if (!styled) looks.set("shaded"); // thumbnails are always plain
+  /** Leave only the picture in the scene (no helpers). Returns the function that puts everything back. */
+  function cleanScene({ transparent = false, grid = false, floorOn = true, ref = false } = {}) {
     const changed = [];
     const vis = (o, v) => { if (o && o.visible !== v) { changed.push([o, o.visible]); o.visible = v; } };
     const gridShown = S.grid().visible;
@@ -493,6 +492,17 @@ function boot() {
     vis(reference.mesh, ref && reference.mesh.visible);
     const bg = scene.background, fog = scene.fog, floorMat = floor.material;
     if (transparent) { scene.background = null; scene.fog = null; floor.material = shadowCatcher; }
+    return () => {
+      scene.background = bg; scene.fog = fog; floor.material = floorMat;
+      for (const [o, v] of changed.reverse()) o.visible = v;
+      invalidate();
+    };
+  }
+
+  function cleanRender({ scale = 1, styled = false, ...what } = {}, read) {
+    const look = looks.get();
+    if (!styled) looks.set("shaded"); // thumbnails are always plain
+    const restore = cleanScene(what);
     const pr = renderer.getPixelRatio();
     const w = canvas.clientWidth * pr, h = canvas.clientHeight * pr;
     const k = Math.min(scale, 8192 / Math.max(w, h));
@@ -502,10 +512,46 @@ function boot() {
     } finally {
       looks.set(look);
       if (k !== 1) renderer.setPixelRatio(pr);
-      scene.background = bg; scene.fog = fog; floor.material = floorMat;
-      for (const [o, v] of changed.reverse()) o.visible = v;
-      invalidate();
+      restore();
     }
+  }
+
+  /** A short video of the camera going once around the scene, in the current look, with no helpers. */
+  const videoType = typeof MediaRecorder !== "undefined" && canvas.captureStream
+    ? ["video/webm;codecs=vp9", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) : null;
+  async function recordTurntable(seconds = 6) {
+    const o = exportOptions();
+    selection.set(null);
+    const restore = cleanScene({ grid: o.grid, floorOn: o.floorOn, ref: o.ref });
+    const cam = S.cameraState();
+    const off = camera.position.clone().sub(orbit.target);
+    const az = Math.atan2(off.x, off.z), el = Math.asin(THREE.MathUtils.clamp(off.y / off.length(), -1, 1));
+    const rec = new MediaRecorder(canvas.captureStream(30), { mimeType: videoType, videoBitsPerSecond: 8e6 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((done) => { rec.onstop = done; });
+    orbit.enabled = false;
+    rec.start();
+    const t0 = performance.now();
+    try {
+      await new Promise((done) => {
+        const step = (now) => {
+          const k = Math.min(1, (now - t0) / (seconds * 1000));
+          S.orbitTo(az + k * Math.PI * 2, el);
+          invalidate();
+          $("exportSize").textContent = `Recording… ${Math.ceil(seconds * (1 - k))} s left`;
+          if (k < 1) requestAnimationFrame(step); else done();
+        };
+        requestAnimationFrame(step);
+      });
+    } finally {
+      rec.stop();
+      await stopped;
+      orbit.enabled = true;
+      S.setCameraState(cam);
+      restore();
+    }
+    return new Blob(chunks, { type: videoType.split(";")[0] });
   }
 
   function captureThumb(size = 256) {
@@ -1159,6 +1205,18 @@ function boot() {
     downloadBlob(await exportBlob(), stamp() + ".png");
     exportDialog.close();
     toast("PNG exported");
+  });
+  $("btnTurntable").hidden = !videoType;
+  $("btnTurntable").addEventListener("click", async () => {
+    const buttons = [...exportDialog.querySelectorAll("button")];
+    buttons.forEach((b) => (b.disabled = true));
+    try {
+      const blob = await recordTurntable();
+      downloadBlob(blob, stamp("posesandbox-turn") + (blob.type.includes("mp4") ? ".mp4" : ".webm"));
+      toast("Turntable video saved");
+    } catch { toast("Your browser couldn't record the video", 2600); }
+    buttons.forEach((b) => (b.disabled = false));
+    exportDialog.close();
   });
   $("btnCopyPng").addEventListener("click", async () => {
     try {
