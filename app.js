@@ -748,10 +748,20 @@ function boot() {
     if (msg) toast(msg, 900);
   }
 
+  const GROUPS = ["Standing", "Gesture", "Action", "Seated and floor"];
   function renderPresets() {
     const grid = $("presetGrid");
+    $("presetCount").textContent = `· ${PRESETS.length} poses`;
     grid.replaceChildren();
-    for (const p of PRESETS) {
+    let group = null;
+    for (const p of [...PRESETS].sort((a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group))) { // stable: library order within a group
+      if (p.group !== group) {
+        group = p.group;
+        const h = document.createElement("h4");
+        h.className = "tiles__head";
+        h.textContent = group;
+        grid.append(h);
+      }
       const b = document.createElement("button");
       b.type = "button";
       b.className = "tile";
